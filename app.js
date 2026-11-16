@@ -11,6 +11,7 @@ const removeFileButton = document.querySelector("#remove-file");
 const scanButton = document.querySelector("#scan-button");
 const scanButtonLabel = document.querySelector("#scan-button-label");
 const runtimeNote = document.querySelector("#runtime-note");
+const runtimeIndicator = document.querySelector(".runtime-dot");
 const statusMessage = document.querySelector("#status-message");
 const resultsElement = document.querySelector("#results");
 const resultSummary = document.querySelector("#result-summary");
@@ -21,6 +22,12 @@ const analysisTime = document.querySelector("#analysis-time");
 let selectedFile = null;
 let pyodidePromise = null;
 let scanning = false;
+let engineState = "loading";
+
+function setEngineState(state) {
+  engineState = state;
+  runtimeIndicator.dataset.state = state;
+}
 
 const macroCapableOfficeExtensions = new Set([
   "xls", "xla", "xlsm", "xlam", "xlsb",
@@ -113,11 +120,16 @@ function setBusy(isBusy, message = "") {
   scanButton.disabled = isBusy || !selectedFile;
   removeFileButton.disabled = isBusy;
   scanButtonLabel.textContent = isBusy ? "Analyzing…" : "Analyze document";
-  runtimeNote.textContent = message || (pyodidePromise ? "Analysis engine ready" : "Analysis engine loads on your first scan");
+  runtimeNote.textContent = message || {
+    loading: "Preparing analysis engine in background…",
+    ready: "Analysis engine ready",
+    error: "Engine unavailable; Analyze will retry",
+  }[engineState];
 }
 
 async function loadPyodideEngine() {
   if (!pyodidePromise) {
+    setEngineState("loading");
     pyodidePromise = (async () => {
       const script = document.createElement("script");
       script.src = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/pyodide.js`;
@@ -139,7 +151,10 @@ async function loadPyodideEngine() {
       return pyodide;
     })();
 
-    pyodidePromise.catch(() => {
+    pyodidePromise.then(() => {
+      setEngineState("ready");
+    }, () => {
+      setEngineState("error");
       pyodidePromise = null;
     });
   }
@@ -274,4 +289,13 @@ for (const eventName of ["dragleave", "drop"]) {
 dropZone.addEventListener("drop", (event) => {
   const file = event.dataTransfer?.files?.[0];
   if (file) setSelectedFile(file);
+});
+
+loadPyodideEngine().then(() => {
+  if (!scanning) setBusy(false);
+}).catch((error) => {
+  if (!scanning) {
+    setBusy(false);
+    setStatus(`Analysis engine could not be loaded: ${error.message}`, true);
+  }
 });
