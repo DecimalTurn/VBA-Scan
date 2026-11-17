@@ -3,10 +3,11 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#111a17">
+    <meta id="theme-color" name="theme-color" content="#f8faf8">
     <title>VBA Scan: Local macro analysis</title>
     <link rel="icon" type="image/svg+xml" href="assets/logo_notext.svg">
-    <link rel="stylesheet" href="styles.css?v=2">
+    <script src="theme.js"></script>
+    <link rel="stylesheet" href="styles.css?v=4">
     <script type="module" src="app.js"></script>
   </head>
   <body>
@@ -19,23 +20,39 @@
             </span>
             <span class="brand-name">VBA <span>Scan</span></span>
           </a>
-          <div class="privacy-card">
-            <div class="privacy-icon" aria-hidden="true">
-              <svg viewBox="0 0 20 20" fill="none">
-                <path d="M10 2.5 16 5v4.3c0 3.8-2.6 6.8-6 8.2-3.4-1.4-6-4.4-6-8.2V5l6-2.5Z" stroke="currentColor" stroke-width="1.4"/>
-                <path d="m7.5 9.7 1.7 1.7 3.5-3.7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+          <div class="header-actions">
+            <a class="header-icon-button github-link" href="https://github.com/DecimalTurn/vba-scan" target="_blank" rel="noopener noreferrer" aria-label="View VBA Scan on GitHub" title="View on GitHub">
+              <img src="assets/github-mark.svg" alt="">
+            </a>
+            <button id="theme-toggle" class="header-icon-button theme-toggle" type="button" aria-label="Switch theme" aria-pressed="false" title="Switch theme">
+              <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.7"/>
+                <path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
               </svg>
-            </div>
-            <div class="privacy-copy-wrap">
-              <p class="privacy-title">Private by design</p>
-              <p class="privacy-copy">Your document stays on this device.</p>
-            </div>
+              <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M20.2 15.1A8.5 8.5 0 0 1 8.9 3.8 8.6 8.6 0 1 0 20.2 15.1Z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
           </div>
         </header>
 
         <div class="content-wrap">
           <section class="intro">
-            <h1>Macro analysis</h1>
+            <div class="intro-heading">
+              <h1>Macro analysis</h1>
+              <div class="privacy-card">
+                <div class="privacy-icon" aria-hidden="true">
+                  <svg viewBox="0 0 20 20" fill="none">
+                    <path d="M10 2.5 16 5v4.3c0 3.8-2.6 6.8-6 8.2-3.4-1.4-6-4.4-6-8.2V5l6-2.5Z" stroke="currentColor" stroke-width="1.4"/>
+                    <path d="m7.5 9.7 1.7 1.7 3.5-3.7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </div>
+                <div class="privacy-copy-wrap">
+                  <p class="privacy-title">Private by design</p>
+                  <p class="privacy-copy">Your document stays on this device.</p>
+                </div>
+              </div>
+            </div>
             <p class="intro-copy">Inspect VBA-Enabled Office documents for suspicious VBA macros and other indicators.</p>
             <details class="more-info">
               <summary>More information</summary>
