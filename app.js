@@ -56,7 +56,7 @@ def scan_document(path):
 
         findings = [
             {"type": kind, "keyword": keyword, "description": description}
-            for kind, keyword, description in parser.analyze_macros()
+            for kind, keyword, description in (parser.analyze_macros() or [])
         ]
         return json.dumps({
             "has_vba": has_vba,
@@ -187,15 +187,13 @@ async function loadPyodideEngine() {
 }
 
 function renderResults(result, elapsedMilliseconds) {
-  const summaries = [
-    { label: "VBA macros", value: result.has_vba ? "Detected" : "Not detected", tone: result.has_vba ? "alert" : "good" },
-    { label: "Excel 4.0 macros", value: result.has_xlm ? "Detected" : "Not detected", tone: result.has_xlm ? "danger" : "good" },
-    {
-      label: "VBA stomping",
-      value: result.stomping === null ? "Could not check" : result.stomping ? "Detected" : "Not detected",
-      tone: result.stomping === null ? "neutral" : result.stomping ? "danger" : "good",
-    },
-  ];
+  const summaries = [];
+  if (result.has_xlm) {
+    summaries.push({ label: "⚠️ Excel 4.0 macros detected", value: "Review this document", tone: "danger" });
+  }
+  if (result.stomping) {
+    summaries.push({ label: "⚠️ VBA stomping detected", value: "Compiled VBA differs from source", tone: "danger" });
+  }
 
   resultSummary.replaceChildren(...summaries.map((item) => {
     const card = document.createElement("div");
@@ -211,34 +209,25 @@ function renderResults(result, elapsedMilliseconds) {
     card.append(label, value);
     return card;
   }));
+  resultSummary.hidden = summaries.length === 0;
 
   const isStompingFinding = (finding) =>
     [finding.type, finding.keyword, finding.description].some(
       (value) => typeof value === "string" && value.toLowerCase().includes("stomp"),
     );
-  const findings = result.stomping
-    ? result.findings.filter((finding) => !isStompingFinding(finding))
-    : [...result.findings];
-  if (result.stomping) {
-    findings.unshift({
-      type: "VBA stomping",
-      keyword: "Compiled VBA differs from source",
-      description: "The compiled macro code does not match the readable VBA source.",
-    });
-  }
-  if (result.stomping_error) {
-    findings.unshift({
-      type: "Stomping check",
-      keyword: "Check unavailable",
-      description: result.stomping_error,
-    });
-  }
+  const findings = result.findings.filter((finding) => !isStompingFinding(finding));
 
   findingCount.textContent = `${findings.length} ${findings.length === 1 ? "indicator" : "indicators"}`;
   if (findings.length === 0) {
     const empty = document.createElement("div");
     empty.className = "no-findings";
-    empty.textContent = "No suspicious keywords were reported by oletools.";
+    if (!result.has_vba) {
+      const indicator = document.createElement("span");
+      indicator.className = "no-vba-indicator";
+      empty.append(indicator, document.createTextNode("No VBA code found in this file."));
+    } else {
+      empty.textContent = "No suspicious keywords were reported by oletools.";
+    }
     findingsList.replaceChildren(empty);
   } else {
     findingsList.replaceChildren(...findings.map((finding) => {

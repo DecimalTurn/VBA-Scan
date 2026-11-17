@@ -167,11 +167,11 @@ h2 { margin: 8px 0 0; font-family: var(--display); font-size: 18px; font-weight:
 @keyframes spinner-rotate { to { transform: rotate(360deg); } }
 
 .results { margin-top: 27px; padding: 22px 24px 18px; border: 1px solid #e3e8e4; border-radius: 9px; background: #fff; }
-.drop-zone[hidden], .results[hidden], .selected-file[hidden] { display: none; }
+.drop-zone[hidden], .results[hidden], .result-summary[hidden], .selected-file[hidden] { display: none; }
 .analysis-time { padding-top: 4px; color: #9aa39d; font-size: 9px; }
-.result-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 19px; }
+.result-summary { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 19px; }
 .summary-card { min-height: 84px; padding: 13px 14px; border: 1px solid #e8ece9; border-radius: 6px; background: #fcfdfc; }
-.summary-label { color: #89948c; font-family: var(--mono); font-size: 9px; letter-spacing: .045em; text-transform: uppercase; }
+.summary-label { color: #59685e; font-family: var(--mono); font-size: 12px; font-weight: 500; letter-spacing: .045em; text-transform: uppercase; }
 .summary-value { display: flex; align-items: center; gap: 7px; margin-top: 10px; color: #415047; font-size: 12px; font-weight: 600; }
 .summary-value .indicator { width: 7px; height: 7px; border-radius: 50%; background: #82a27a; }
 .summary-value.alert .indicator { background: #d8a44b; }
@@ -187,7 +187,8 @@ h2 { margin: 8px 0 0; font-family: var(--display); font-size: 18px; font-weight:
 .finding-content { min-width: 0; }
 .finding-keyword { overflow-wrap: anywhere; color: #435149; font-size: 11px; font-weight: 600; }
 .finding-description { margin-top: 3px; color: #879189; font-size: 10px; line-height: 1.5; }
-.no-findings { padding: 14px 0; color: #718078; font-size: 11px; }
+.no-findings { display: flex; align-items: center; gap: 8px; padding: 14px 0; color: #718078; font-size: 11px; }
+.no-vba-indicator { width: 7px; height: 7px; flex: none; border-radius: 50%; background: #82a27a; }
 .disclaimer { margin: 15px 0 0; color: #909a93; font-size: 10px; line-height: 1.5; }
 
 .page-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 28px 0 20px; color: #96a098; font-size: 8px; }
