@@ -41,7 +41,7 @@ button { color: inherit; }
 .brand-name { font-family: var(--display); font-size: 19px; font-weight: 800; letter-spacing: -1px; }
 .brand-name span { color: #62844c; }
 
-.section-index, .eyebrow, .privacy-status, .file-types, .page-footer, .analysis-time {
+.section-index, .eyebrow, .privacy-status, .page-footer, .analysis-time {
   font-family: var(--mono);
   font-size: 10px;
   letter-spacing: .07em;
@@ -91,7 +91,11 @@ h1 {
 }
 
 h1 span { color: #87918a; }
-.intro-copy { max-width: 470px; margin: 0; color: #758079; font-size: 13px; line-height: 1.7; }
+.intro-copy { width: 100%; max-width: none; margin: 0; color: #758079; font-size: 13px; line-height: 1.7; }
+.more-info { margin-top: 8px; color: #758079; font-size: 11px; }
+.more-info summary { width: fit-content; color: #527345; cursor: pointer; }
+.more-info p { max-width: 470px; margin: 7px 0 0; line-height: 1.6; }
+.more-info ul { max-width: 470px; margin: 4px 0 0; padding-left: 20px; line-height: 1.6; }
 
 .scan-panel {
   padding: 24px;
@@ -105,7 +109,6 @@ h1 span { color: #87918a; }
 .section-index { color: #8c9990; font-size: 9px; }
 .section-index span { padding: 0 4px; color: #bdc5bf; }
 h2 { margin: 8px 0 0; font-family: var(--display); font-size: 18px; font-weight: 700; letter-spacing: -.5px; }
-.file-types { padding-top: 6px; color: #929c95; font-size: 9px; }
 
 .drop-zone {
   display: flex;
@@ -207,7 +210,6 @@ h2 { margin: 8px 0 0; font-family: var(--display); font-size: 18px; font-weight:
   .intro-copy { font-size: 12px; }
   .scan-panel, .results { padding: 18px 15px; }
   .panel-topline { flex-direction: column; gap: 10px; }
-  .file-types { padding-top: 0; }
   .drop-zone { min-height: 190px; }
   .result-summary { grid-template-columns: 1fr; gap: 7px; }
   .summary-card { min-height: 68px; }

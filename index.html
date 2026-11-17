@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#111a17">
     <title>VBA Scan: Local macro analysis</title>
     <link rel="icon" type="image/svg+xml" href="assets/logo_notext.svg">
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=2">
     <script type="module" src="app.js"></script>
   </head>
   <body>
@@ -37,15 +37,29 @@
           <section class="intro">
             <h1>Macro analysis</h1>
             <p class="intro-copy">Inspect VBA-Enabled Office documents for suspicious VBA macros and other indicators.</p>
+            <details class="more-info">
+              <summary>More information</summary>
+              <p>Macro-capable file formats include:</p>
+              <ul>
+                <li><strong>XLS</strong>: Excel 97–2003 Workbook</li>
+                <li><strong>XLSM</strong>: Excel Macro-Enabled Workbook</li>
+                <li><strong>XLSB</strong>: Excel Binary Workbook</li>
+                <li><strong>XLA</strong>: Excel 97–2003 Add-In</li>
+                <li><strong>XLAM</strong>: Excel Macro-Enabled Add-In</li>
+                <li><strong>DOCM</strong>: Word Macro-Enabled Document</li>
+                <li><strong>DOTM</strong>: Word Macro-Enabled Template</li>
+                <li><strong>PPTM</strong>: PowerPoint Macro-Enabled Presentation</li>
+                <li><strong>POTM</strong>: PowerPoint Macro-Enabled Template</li>
+                <li><strong>PPSM</strong>: PowerPoint Macro-Enabled Show</li>
+              </ul>
+            </details>
           </section>
 
           <section class="scan-panel" aria-labelledby="upload-heading">
             <div class="panel-topline">
               <div>
-                <div class="section-index">01 <span>/</span> SELECT A DOCUMENT</div>
                 <h2 id="upload-heading">Choose a file to inspect</h2>
               </div>
-              <div class="file-types" aria-label="Macro-capable file types">XLS · XLSM · XLSB · XLA · XLAM · DOCM · DOTM · PPTM · POTM · PPSM</div>
             </div>
 
             <div id="drop-zone" class="drop-zone" role="group" aria-label="Drop an Office document here">
