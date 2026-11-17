@@ -18,11 +18,16 @@ const resultSummary = document.querySelector("#result-summary");
 const findingsList = document.querySelector("#findings-list");
 const findingCount = document.querySelector("#finding-count");
 const analysisTime = document.querySelector("#analysis-time");
+const documentHash = document.querySelector("#document-hash");
+const documentFilename = document.querySelector("#document-filename");
+const copyHashButton = document.querySelector("#copy-hash-button");
+const copyStatus = document.querySelector("#copy-status");
 
 let selectedFile = null;
 let pyodidePromise = null;
 let scanning = false;
 let engineState = "loading";
+let copyFeedbackTimeout = null;
 
 function setEngineState(state) {
   engineState = state;
@@ -186,7 +191,9 @@ async function loadPyodideEngine() {
   return pyodidePromise;
 }
 
-function renderResults(result, elapsedMilliseconds) {
+function renderResults(result, elapsedMilliseconds, sha256, fileName) {
+  documentHash.textContent = sha256;
+  documentFilename.textContent = fileName;
   const summaries = [];
   if (result.has_xlm) {
     summaries.push({ label: "⚠️ Excel 4.0 macros detected", value: "Review this document", tone: "danger" });
@@ -289,12 +296,18 @@ async function analyzeSelectedFile() {
     setBusy(true, "Analyzing locally in your browser…");
     setStatus();
     const file = selectedFile;
-    const path = `/tmp/vba-scan-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
     const startedAt = performance.now();
-    pyodide.FS.writeFile(path, new Uint8Array(await file.arrayBuffer()));
+    if (!globalThis.crypto?.subtle) {
+      throw new Error("SHA-256 hashing is unavailable in this browser context.");
+    }
+    const fileBytes = await file.arrayBuffer();
+    const digest = await globalThis.crypto.subtle.digest("SHA-256", fileBytes);
+    const sha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+    const path = `/tmp/vba-scan-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+    pyodide.FS.writeFile(path, new Uint8Array(fileBytes));
     try {
       const rawResult = await pyodide.runPythonAsync(`scan_document(${JSON.stringify(path)})`);
-      renderResults(JSON.parse(rawResult), performance.now() - startedAt);
+      renderResults(JSON.parse(rawResult), performance.now() - startedAt, sha256, file.name);
     } finally {
       pyodide.FS.unlink(path);
     }
@@ -315,6 +328,27 @@ fileInput.addEventListener("change", () => {
   if (fileInput.files?.[0]) setSelectedFile(fileInput.files[0]);
 });
 removeFileButton.addEventListener("click", clearSelectedFile);
+copyHashButton.addEventListener("click", async () => {
+  try {
+    if (!navigator.clipboard?.writeText) {
+      throw new Error("Clipboard access is unavailable in this browser context.");
+    }
+    await navigator.clipboard.writeText(documentHash.textContent);
+    copyHashButton.classList.add("copied");
+    copyHashButton.setAttribute("aria-label", "SHA-256 copied");
+    copyHashButton.title = "SHA-256 copied";
+    copyStatus.textContent = "SHA-256 copied to clipboard.";
+    window.clearTimeout(copyFeedbackTimeout);
+    copyFeedbackTimeout = window.setTimeout(() => {
+      copyHashButton.classList.remove("copied");
+      copyHashButton.setAttribute("aria-label", "Copy SHA-256");
+      copyHashButton.title = "Copy SHA-256";
+      copyStatus.textContent = "";
+    }, 1500);
+  } catch (error) {
+    setStatus(`Could not copy SHA-256: ${error.message}`, true);
+  }
+});
 for (const eventName of ["dragenter", "dragover"]) {
   dropZone.addEventListener(eventName, (event) => {
     event.preventDefault();

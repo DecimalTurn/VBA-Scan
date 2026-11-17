@@ -251,6 +251,16 @@ h2 { margin: 8px 0 0; font-family: var(--display); font-size: 18px; font-weight:
 .results { margin-top: 27px; padding: 22px 24px 18px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface); }
 .drop-zone[hidden], .results[hidden], .result-summary[hidden], .selected-file[hidden] { display: none; }
 .analysis-time { padding-top: 4px; color: var(--text-subtle); font-size: 9px; }
+.document-identity { display: grid; gap: 4px; margin-top: 12px; color: var(--text-subtle); font-family: var(--mono); font-size: 10px; overflow-wrap: anywhere; }
+.document-identity code { font: inherit; }
+.document-hash-row { min-width: 0; }
+.document-hash-row > span { margin-right: 7px; }
+.copy-hash-button { display: inline-grid; width: 23px; height: 23px; place-items: center; margin: 0 0 0 5px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--text-subtle); cursor: pointer; vertical-align: middle; }
+.copy-hash-button:hover { background: var(--line-soft); color: var(--ink); }
+.copy-hash-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.copy-hash-button svg { width: 15px; height: 15px; }
+.copy-hash-button .copied-icon, .copy-hash-button.copied .copy-icon { display: none; }
+.copy-hash-button.copied .copied-icon { display: block; color: var(--good); }
 .result-summary { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 19px; }
 .summary-card { min-height: 84px; padding: 13px 14px; border: 1px solid var(--line-soft); border-radius: 6px; background: var(--control); }
 .summary-label { color: var(--text-muted); font-family: var(--mono); font-size: 12px; font-weight: 500; letter-spacing: .045em; text-transform: uppercase; }
