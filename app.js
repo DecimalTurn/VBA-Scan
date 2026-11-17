@@ -11,6 +11,8 @@ const removeFileButton = document.querySelector("#remove-file");
 const runtimeNote = document.querySelector("#runtime-note");
 const runtimeIndicator = document.querySelector(".runtime-dot");
 const statusMessage = document.querySelector("#status-message");
+const statusText = document.querySelector("#status-text");
+const analysisSpinner = document.querySelector("#analysis-spinner");
 const resultsElement = document.querySelector("#results");
 const resultSummary = document.querySelector("#result-summary");
 const findingsList = document.querySelector("#findings-list");
@@ -68,7 +70,9 @@ def scan_document(path):
 `;
 
 function setStatus(message = "", isError = false) {
-  statusMessage.textContent = message;
+  statusText.textContent = message;
+  analysisSpinner.hidden = !scanning || isError;
+  statusMessage.hidden = !message && analysisSpinner.hidden;
   statusMessage.classList.toggle("error", isError);
 }
 
@@ -118,6 +122,7 @@ function formatFileSize(bytes) {
 
 function setBusy(isBusy, message = "") {
   scanning = isBusy;
+  if (!isBusy) analysisSpinner.hidden = true;
   removeFileButton.disabled = isBusy;
   runtimeNote.textContent = message || {
     loading: "Preparing analysis engine in background…",
@@ -264,7 +269,7 @@ async function analyzeSelectedFile() {
     if (!selectedFile) return;
 
     setBusy(true, "Analyzing locally in your browser…");
-    setStatus("Inspecting the document. Its contents are not sent to a server.");
+    setStatus();
     const file = selectedFile;
     const path = `/tmp/vba-scan-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
     const startedAt = performance.now();

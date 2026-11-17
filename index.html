@@ -39,7 +39,7 @@
             <p class="intro-copy">Inspect VBA-Enabled Office documents for suspicious VBA macros and other indicators.</p>
             <details class="more-info">
               <summary>More information</summary>
-              <p>Macro-capable file formats include:</p>
+              <p>Supported file formats include:</p>
               <ul>
                 <li><strong>XLS</strong>: Excel 97–2003 Workbook</li>
                 <li><strong>XLSM</strong>: Excel Macro-Enabled Workbook</li>
@@ -94,13 +94,16 @@
             <div class="panel-actions">
               <p class="runtime-note"><span class="runtime-dot" data-state="loading"></span><span id="runtime-note" role="status" aria-live="polite">Loading analysis engine…</span></p>
             </div>
-            <p id="status-message" class="status-message" role="status" aria-live="polite"></p>
+            <p id="status-message" class="status-message" role="status" aria-live="polite" hidden>
+              <span id="analysis-spinner" class="analysis-spinner" aria-hidden="true" hidden></span>
+              <span id="status-text"></span>
+            </p>
           </section>
 
           <section id="results" class="results" aria-labelledby="results-heading" hidden>
             <div class="results-heading-row">
               <div>
-                <div class="section-index">02 <span>/</span> ANALYSIS RESULTS</div>
+                <div class="section-index">ANALYSIS RESULTS</div>
                 <h2 id="results-heading">Document overview</h2>
               </div>
               <span id="analysis-time" class="analysis-time"></span>
