@@ -16,4 +16,15 @@ python3 -m http.server 8000
 
 Open <http://localhost:8000>. 
 
+## Acknowledgements
+
+- [oletools](https://github.com/decalage2/oletools) for providing the core analysis functionality.
+- [Pyodide](https://github.com/pyodide/pyodide) for enabling Python to run in the browser via WebAssembly.
+- [Senipah](https://gist.github.com/Senipah/cbfa43cf472fd03fbb322e00ae4fe7c7) for the project logo base design.
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+The oletools package remains under its own license. See the [oletools repository](https://github.com/decalage2/oletools) for more information.
 
