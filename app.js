@@ -212,7 +212,13 @@ function renderResults(result, elapsedMilliseconds) {
     return card;
   }));
 
-  const findings = [...result.findings];
+  const isStompingFinding = (finding) =>
+    [finding.type, finding.keyword, finding.description].some(
+      (value) => typeof value === "string" && value.toLowerCase().includes("stomp"),
+    );
+  const findings = result.stomping
+    ? result.findings.filter((finding) => !isStompingFinding(finding))
+    : [...result.findings];
   if (result.stomping) {
     findings.unshift({
       type: "VBA stomping",
