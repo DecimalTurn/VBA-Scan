@@ -1,6 +1,11 @@
 const PYODIDE_VERSION = "0.27.7";
 const OLETOOLS_VERSION = "0.60.2";
 const PCODE_CHUNK_SIZE = 16_384;
+const PCODE_PREVIEW_LIMIT = 524_288;
+const PCODE_DOWNLOAD_CHUNK_SIZE = 262_144;
+const PCODE_BLOB_FALLBACK_LIMIT = 8 * 1024 * 1024;
+const DEBUG_LOG_KEY = "vba-scan-debug-events";
+const debugMode = new URLSearchParams(window.location.search).get("debug") === "1";
 
 const fileInput = document.querySelector("#file-input");
 const dropZone = document.querySelector("#drop-zone");
@@ -14,6 +19,7 @@ const runtimeIndicator = document.querySelector(".runtime-dot");
 const statusMessage = document.querySelector("#status-message");
 const statusText = document.querySelector("#status-text");
 const analysisSpinner = document.querySelector("#analysis-spinner");
+const debugLogButton = document.querySelector("#download-debug-log");
 const resultsElement = document.querySelector("#results");
 const resultSummary = document.querySelector("#result-summary");
 const pcodeSection = document.querySelector("#pcode-section");
@@ -35,8 +41,21 @@ let pyodidePromise = null;
 let scanning = false;
 let engineState = "loading";
 let copyFeedbackTimeout = null;
-let fullPcode = "";
 let pcodeOffset = 0;
+let pcodePath = "";
+let pcodeSize = 0;
+let pcodeLoading = false;
+let pcodeDownloadInProgress = false;
+let pcodeDecoder = new TextDecoder("utf-8");
+const debugEvents = [];
+if (debugMode) {
+  try {
+    const savedEvents = JSON.parse(localStorage.getItem(DEBUG_LOG_KEY) || "[]");
+    if (Array.isArray(savedEvents)) debugEvents.push(...savedEvents.slice(-500));
+  } catch {}
+}
+
+debugLogButton.hidden = !debugMode;
 
 function setEngineState(state) {
   engineState = state;
@@ -54,9 +73,10 @@ const macroFreeOfficeExtensions = new Set([
 
 const analyzePython = `
 import json
+import os
 from oletools.olevba import VBA_Parser
 
-def scan_document(path):
+def scan_document(path, pcode_path):
     parser = VBA_Parser(path)
     try:
         has_vba = parser.detect_vba_macros()
@@ -68,11 +88,15 @@ def scan_document(path):
         except Exception as error:
             stomping_error = str(error)
 
-        pcode = ""
+        pcode_size = 0
         pcode_error = None
         if stomping:
             try:
                 pcode = parser.extract_pcode() or ""
+                if pcode:
+                    with open(pcode_path, "w", encoding="utf-8") as pcode_file:
+                        pcode_file.write(pcode)
+                    pcode_size = os.path.getsize(pcode_path)
             except Exception as error:
                 pcode_error = str(error)
 
@@ -85,13 +109,45 @@ def scan_document(path):
             "has_xlm": has_xlm,
             "stomping": stomping,
             "stomping_error": stomping_error,
-            "pcode": pcode,
+            "pcode_size": pcode_size,
             "pcode_error": pcode_error,
             "findings": findings,
         })
     finally:
         parser.close()
+
 `;
+
+function logDebug(event, details = {}) {
+  if (!debugMode) return;
+  debugEvents.push({ timestamp: new Date().toISOString(), elapsed_ms: Math.round(performance.now()), event, ...details });
+  if (debugEvents.length > 500) debugEvents.shift();
+  try { localStorage.setItem(DEBUG_LOG_KEY, JSON.stringify(debugEvents)); } catch {}
+}
+
+function getErrorDetails(error) {
+  return {
+    name: error?.name || "Error",
+    message: String(error?.message || error).replace(selectedFile?.name || "\0", "[selected file]"),
+  };
+}
+
+window.addEventListener("error", (event) => {
+  logDebug("window_error", { message: event.message, filename: event.filename, line: event.lineno });
+});
+window.addEventListener("unhandledrejection", (event) => {
+  logDebug("unhandled_rejection", getErrorDetails(event.reason));
+});
+if (debugMode && "PerformanceObserver" in window) {
+  try {
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        logDebug("long_task", { duration_ms: Math.round(entry.duration), start_ms: Math.round(entry.startTime) });
+      }
+    }).observe({ type: "longtask", buffered: true });
+  } catch {}
+}
+logDebug("debug_session_started", { user_agent: navigator.userAgent });
 
 function setStatus(message = "", isError = false) {
   statusText.textContent = message;
@@ -101,15 +157,59 @@ function setStatus(message = "", isError = false) {
 }
 
 function logDuration(label, startedAt) {
-  console.info(`[VBA Scan] ${label}: ${(performance.now() - startedAt).toFixed(1)} ms`);
+  const duration = Number((performance.now() - startedAt).toFixed(1));
+  console.info(`[VBA Scan] ${label}: ${duration} ms`);
+  logDebug("timing", { label, duration_ms: duration });
 }
 
-function appendPcodeChunk() {
-  const end = Math.min(pcodeOffset + PCODE_CHUNK_SIZE, fullPcode.length);
-  pcodeOutput.append(document.createTextNode(fullPcode.slice(pcodeOffset, end)));
-  pcodeOffset = end;
-  pcodeMoreButton.hidden = pcodeOffset >= fullPcode.length;
-  pcodeProgress.textContent = `Showing ${pcodeOffset.toLocaleString()} of ${fullPcode.length.toLocaleString()} characters`;
+async function readPcodeBytes(offset, size) {
+  const pyodide = await pyodidePromise;
+  const stream = pyodide.FS.open(pcodePath, "r");
+  const buffer = new Uint8Array(size);
+  try {
+    const bytesRead = pyodide.FS.read(stream, buffer, 0, size, offset);
+    return buffer.subarray(0, bytesRead);
+  } finally {
+    pyodide.FS.close(stream);
+  }
+}
+
+async function appendPcodeChunk() {
+  if (pcodeLoading || pcodeOffset >= Math.min(pcodeSize, PCODE_PREVIEW_LIMIT)) return;
+  pcodeLoading = true;
+  pcodeMoreButton.disabled = true;
+  const startedAt = performance.now();
+  try {
+    const bytes = await readPcodeBytes(pcodeOffset, PCODE_CHUNK_SIZE);
+    pcodeOffset += bytes.length;
+    pcodeOutput.append(document.createTextNode(pcodeDecoder.decode(bytes, { stream: pcodeOffset < pcodeSize })));
+    pcodeProgress.textContent = `Preview: ${pcodeOffset.toLocaleString()} of ${pcodeSize.toLocaleString()} bytes`;
+    pcodeMoreButton.hidden = pcodeOffset >= Math.min(pcodeSize, PCODE_PREVIEW_LIMIT);
+    logDebug("pcode_preview_chunk", { bytes: bytes.length, total_bytes: pcodeSize });
+  } catch (error) {
+    logDebug("pcode_preview_error", getErrorDetails(error));
+    setStatus(`Could not load p-code preview: ${error.message}`, true);
+  } finally {
+    pcodeMoreButton.disabled = false;
+    logDuration("P-code preview chunk", startedAt);
+    pcodeLoading = false;
+  }
+}
+
+function downloadDebugLog() {
+  const log = {
+    app: "VBA Scan",
+    pyodide_version: PYODIDE_VERSION,
+    oletools_version: OLETOOLS_VERSION,
+    user_agent: navigator.userAgent,
+    events: debugEvents,
+  };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(log, null, 2)], { type: "application/json" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "vba-scan-debug-log.json";
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function setSelectedFile(file) {
@@ -128,6 +228,7 @@ function setSelectedFile(file) {
   }
 
   selectedFile = file;
+  logDebug("file_selected", { size_bytes: file.size, extension });
   fileNameElement.textContent = file.name;
   fileSizeElement.textContent = formatFileSize(file.size);
   selectedFileElement.hidden = false;
@@ -140,6 +241,13 @@ function setSelectedFile(file) {
 function clearSelectedFile() {
   selectedFile = null;
   fileInput.value = "";
+  if (pcodePath && pyodidePromise) {
+    const path = pcodePath;
+    pcodePath = "";
+    pyodidePromise.then((pyodide) => {
+      try { pyodide.FS.unlink(path); } catch {}
+    });
+  }
   selectedFileElement.hidden = true;
   dropZone.hidden = false;
   resultsElement.hidden = true;
@@ -269,18 +377,29 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
   resultSummary.hidden = summaries.length === 0;
 
   pcodeSection.hidden = !result.stomping;
-  fullPcode = result.pcode || "";
   pcodeOffset = 0;
+  pcodeSize = result.pcode_size || 0;
+  pcodeDecoder = new TextDecoder("utf-8");
   pcodeOutput.replaceChildren();
-  pcodeOutput.classList.toggle("pcode-unavailable", !fullPcode);
-  if (fullPcode) {
+  pcodeOutput.classList.toggle("pcode-unavailable", !pcodeSize);
+  if (pcodeSize) {
     pcodeControls.hidden = false;
     pcodeDownloadButton.hidden = false;
-    appendPcodeChunk();
+    pcodeProgress.textContent = `Disassembly ready (${pcodeSize.toLocaleString()} bytes)`;
+    pcodeMoreButton.hidden = false;
   } else {
     pcodeControls.hidden = true;
+    pcodeDownloadButton.hidden = true;
     pcodeOutput.textContent = result.pcode_error || "P-code disassembly was not available.";
   }
+  logDebug("analysis_complete", {
+    duration_ms: Math.round(elapsedMilliseconds),
+    has_vba: result.has_vba,
+    has_xlm: result.has_xlm,
+    stomping: result.stomping,
+    pcode_bytes: pcodeSize,
+    finding_count: result.findings.length,
+  });
 
   const isStompingFinding = (finding) =>
     [finding.type, finding.keyword, finding.description].some(
@@ -334,6 +453,12 @@ async function analyzeSelectedFile() {
     const pyodide = await loadPyodideEngine();
     if (!selectedFile) return;
 
+    if (pcodePath) {
+      try { pyodide.FS.unlink(pcodePath); } catch {}
+      pcodePath = "";
+    }
+    pcodeSize = 0;
+
     setBusy(true, "Analyzing locally in your browser…");
     setStatus();
     const file = selectedFile;
@@ -345,15 +470,20 @@ async function analyzeSelectedFile() {
     const digest = await globalThis.crypto.subtle.digest("SHA-256", fileBytes);
     const sha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
     const path = `/tmp/vba-scan-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+    pcodePath = `/tmp/vba-scan-pcode-${Date.now()}.txt`;
     pyodide.FS.writeFile(path, new Uint8Array(fileBytes));
+    logDebug("analysis_started", { input_bytes: fileBytes.byteLength });
     try {
-      const rawResult = await pyodide.runPythonAsync(`scan_document(${JSON.stringify(path)})`);
+      const scanStartedAt = performance.now();
+      const rawResult = await pyodide.runPythonAsync(`scan_document(${JSON.stringify(path)}, ${JSON.stringify(pcodePath)})`);
+      logDuration("Document analysis", scanStartedAt);
       renderResults(JSON.parse(rawResult), performance.now() - startedAt, sha256, file.name);
     } finally {
       pyodide.FS.unlink(path);
     }
     setStatus("Analysis complete. Review any indicators in context.");
   } catch (error) {
+    logDebug("analysis_error", getErrorDetails(error));
     setStatus(`Analysis could not be completed: ${error.message}`, true);
   } finally {
     setBusy(false);
@@ -370,14 +500,79 @@ fileInput.addEventListener("change", () => {
 });
 removeFileButton.addEventListener("click", clearSelectedFile);
 pcodeMoreButton.addEventListener("click", appendPcodeChunk);
-pcodeDownloadButton.addEventListener("click", () => {
-  const url = URL.createObjectURL(new Blob([fullPcode], { type: "text/plain;charset=utf-8" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "vba-pcode.txt";
-  link.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+pcodeSection.addEventListener("toggle", () => {
+  if (pcodeSection.open && pcodeOffset === 0 && pcodeSize) void appendPcodeChunk();
 });
+pcodeDownloadButton.addEventListener("click", async () => {
+  if (pcodeDownloadInProgress || !pcodeSize) return;
+  pcodeDownloadInProgress = true;
+  pcodeDownloadButton.disabled = true;
+  removeFileButton.disabled = true;
+  const startedAt = performance.now();
+  let writable;
+  logDebug("pcode_download_started", {
+    bytes: pcodeSize,
+    file_save_api_available: Boolean(window.showSaveFilePicker),
+  });
+  try {
+    pcodeProgress.textContent = "Preparing p-code download…";
+    if (window.showSaveFilePicker) {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: "vba-pcode.txt",
+        types: [{ description: "Text file", accept: { "text/plain": [".txt"] } }],
+      });
+      writable = await handle.createWritable();
+    } else if (pcodeSize > PCODE_BLOB_FALLBACK_LIMIT) {
+      throw new Error("This browser cannot safely download a large p-code file. Open the page in Chrome or Edge and try again.");
+    }
+
+    const chunks = writable ? null : [];
+    let written = 0;
+    for (let offset = 0; offset < pcodeSize; offset += PCODE_DOWNLOAD_CHUNK_SIZE) {
+      const bytes = await readPcodeBytes(offset, Math.min(PCODE_DOWNLOAD_CHUNK_SIZE, pcodeSize - offset));
+      if (bytes.length === 0) throw new Error("The p-code file ended before the expected size.");
+      if (writable) await writable.write(bytes);
+      else chunks.push(bytes);
+      written += bytes.length;
+      pcodeProgress.textContent = `Downloading ${written.toLocaleString()} of ${pcodeSize.toLocaleString()} bytes`;
+      if (written % (PCODE_DOWNLOAD_CHUNK_SIZE * 16) === 0) {
+        logDebug("pcode_download_progress", { bytes: written, total_bytes: pcodeSize });
+      }
+    }
+    if (writable) {
+      await writable.close();
+    } else {
+      const url = URL.createObjectURL(new Blob(chunks, { type: "text/plain;charset=utf-8" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "vba-pcode.txt";
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+    pcodeProgress.textContent = `Download complete (${written.toLocaleString()} bytes)`;
+    logDebug("pcode_download_complete", { bytes: written });
+  } catch (error) {
+    if (writable) {
+      try { await writable.abort(); } catch {}
+    }
+    if (error.name === "AbortError") {
+      pcodeProgress.textContent = "Download cancelled";
+    } else {
+      logDebug("pcode_download_error", getErrorDetails(error));
+      const message = !writable && pcodeSize > PCODE_BLOB_FALLBACK_LIMIT && window.showSaveFilePicker
+        ? `The browser could not grant file access. Open this page in Chrome or Edge. ${error.message}`
+        : error.message;
+      pcodeProgress.textContent = "Download did not complete";
+      setStatus(`Could not download p-code: ${message}`, true);
+    }
+  } finally {
+    pcodeDownloadButton.disabled = false;
+    removeFileButton.disabled = false;
+    pcodeDownloadInProgress = false;
+    logDuration("P-code download", startedAt);
+  }
+});
+debugLogButton.addEventListener("click", downloadDebugLog);
 copyHashButton.addEventListener("click", async () => {
   try {
     if (!navigator.clipboard?.writeText) {
