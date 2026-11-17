@@ -176,6 +176,7 @@ h1 span { color: var(--text-subtle); }
 .more-info { margin-top: 8px; color: var(--text-muted); font-size: 11px; }
 .more-info summary { width: fit-content; color: var(--accent); cursor: pointer; }
 .more-info p { max-width: 470px; margin: 7px 0 0; line-height: 1.6; }
+.more-info h3 { margin: 14px 0 0; font-size: 12px; }
 .more-info ul { max-width: 470px; margin: 4px 0 0; padding-left: 20px; line-height: 1.6; }
 
 .scan-panel {
