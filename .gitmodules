@@ -1,0 +1,3 @@
+[submodule "vendor/oletools"]
+	path = vendor/oletools
+	url = https://github.com/DecimalTurn/oletools
