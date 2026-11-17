@@ -1,5 +1,6 @@
 const PYODIDE_VERSION = "0.27.7";
 const OLETOOLS_VERSION = "0.60.2";
+const PCODE_CHUNK_SIZE = 16_384;
 
 const fileInput = document.querySelector("#file-input");
 const dropZone = document.querySelector("#drop-zone");
@@ -15,6 +16,12 @@ const statusText = document.querySelector("#status-text");
 const analysisSpinner = document.querySelector("#analysis-spinner");
 const resultsElement = document.querySelector("#results");
 const resultSummary = document.querySelector("#result-summary");
+const pcodeSection = document.querySelector("#pcode-section");
+const pcodeOutput = document.querySelector("#pcode-output");
+const pcodeControls = document.querySelector("#pcode-controls");
+const pcodeProgress = document.querySelector("#pcode-progress");
+const pcodeMoreButton = document.querySelector("#pcode-more");
+const pcodeDownloadButton = document.querySelector("#pcode-download");
 const findingsList = document.querySelector("#findings-list");
 const findingCount = document.querySelector("#finding-count");
 const analysisTime = document.querySelector("#analysis-time");
@@ -28,6 +35,8 @@ let pyodidePromise = null;
 let scanning = false;
 let engineState = "loading";
 let copyFeedbackTimeout = null;
+let fullPcode = "";
+let pcodeOffset = 0;
 
 function setEngineState(state) {
   engineState = state;
@@ -59,6 +68,14 @@ def scan_document(path):
         except Exception as error:
             stomping_error = str(error)
 
+        pcode = ""
+        pcode_error = None
+        if stomping:
+            try:
+                pcode = parser.extract_pcode() or ""
+            except Exception as error:
+                pcode_error = str(error)
+
         findings = [
             {"type": kind, "keyword": keyword, "description": description}
             for kind, keyword, description in (parser.analyze_macros() or [])
@@ -68,6 +85,8 @@ def scan_document(path):
             "has_xlm": has_xlm,
             "stomping": stomping,
             "stomping_error": stomping_error,
+            "pcode": pcode,
+            "pcode_error": pcode_error,
             "findings": findings,
         })
     finally:
@@ -83,6 +102,14 @@ function setStatus(message = "", isError = false) {
 
 function logDuration(label, startedAt) {
   console.info(`[VBA Scan] ${label}: ${(performance.now() - startedAt).toFixed(1)} ms`);
+}
+
+function appendPcodeChunk() {
+  const end = Math.min(pcodeOffset + PCODE_CHUNK_SIZE, fullPcode.length);
+  pcodeOutput.append(document.createTextNode(fullPcode.slice(pcodeOffset, end)));
+  pcodeOffset = end;
+  pcodeMoreButton.hidden = pcodeOffset >= fullPcode.length;
+  pcodeProgress.textContent = `Showing ${pcodeOffset.toLocaleString()} of ${fullPcode.length.toLocaleString()} characters`;
 }
 
 function setSelectedFile(file) {
@@ -241,6 +268,20 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
   }));
   resultSummary.hidden = summaries.length === 0;
 
+  pcodeSection.hidden = !result.stomping;
+  fullPcode = result.pcode || "";
+  pcodeOffset = 0;
+  pcodeOutput.replaceChildren();
+  pcodeOutput.classList.toggle("pcode-unavailable", !fullPcode);
+  if (fullPcode) {
+    pcodeControls.hidden = false;
+    pcodeDownloadButton.hidden = false;
+    appendPcodeChunk();
+  } else {
+    pcodeControls.hidden = true;
+    pcodeOutput.textContent = result.pcode_error || "P-code disassembly was not available.";
+  }
+
   const isStompingFinding = (finding) =>
     [finding.type, finding.keyword, finding.description].some(
       (value) => typeof value === "string" && value.toLowerCase().includes("stomp"),
@@ -328,6 +369,15 @@ fileInput.addEventListener("change", () => {
   if (fileInput.files?.[0]) setSelectedFile(fileInput.files[0]);
 });
 removeFileButton.addEventListener("click", clearSelectedFile);
+pcodeMoreButton.addEventListener("click", appendPcodeChunk);
+pcodeDownloadButton.addEventListener("click", () => {
+  const url = URL.createObjectURL(new Blob([fullPcode], { type: "text/plain;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "vba-pcode.txt";
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
 copyHashButton.addEventListener("click", async () => {
   try {
     if (!navigator.clipboard?.writeText) {

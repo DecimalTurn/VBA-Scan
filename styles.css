@@ -271,6 +271,15 @@ h2 { margin: 8px 0 0; font-family: var(--display); font-size: 18px; font-weight:
 .summary-value.neutral .indicator { background: var(--neutral); }
 .summary-note { margin: 10px 0 0; color: var(--text-subtle); font-size: 11px; line-height: 1.55; }
 .summary-note a { color: var(--accent); text-underline-offset: 2px; }
+.pcode-section { margin-top: 14px; border: 1px solid var(--line-soft); border-radius: 6px; background: var(--control); }
+.pcode-section summary { padding: 12px 14px; color: var(--ink); font-size: 11px; font-weight: 600; cursor: pointer; }
+.pcode-section pre { max-height: 26rem; margin: 0; padding: 13px 14px; overflow: auto; border-top: 1px solid var(--line-soft); color: var(--ink); font: 10px/1.6 var(--mono); tab-size: 4; white-space: pre; }
+.pcode-unavailable { color: var(--text-muted); }
+.pcode-controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 14px; border-top: 1px solid var(--line-soft); color: var(--text-muted); font: 9px var(--mono); }
+.pcode-controls[hidden] { display: none; }
+.pcode-controls > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.pcode-controls button { padding: 6px 9px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface); color: var(--ink); font: 10px var(--sans); cursor: pointer; }
+.pcode-controls button:hover { border-color: var(--accent); }
 .findings-section { margin-top: 20px; }
 .findings-heading { display: flex; align-items: center; justify-content: space-between; padding-bottom: 10px; border-bottom: 1px solid var(--line-subtle); }
 .findings-heading h3 { margin: 0; color: var(--ink); font-size: 11px; font-weight: 600; }

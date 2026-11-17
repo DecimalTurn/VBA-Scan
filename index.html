@@ -141,6 +141,17 @@
               <span id="copy-status" class="visually-hidden" aria-live="polite"></span>
             </div>
             <div id="result-summary" class="result-summary"></div>
+            <details id="pcode-section" class="pcode-section" hidden>
+              <summary>VBA P-code disassembly</summary>
+              <pre><code id="pcode-output"></code></pre>
+              <div id="pcode-controls" class="pcode-controls" hidden>
+                <span id="pcode-progress" role="status" aria-live="polite"></span>
+                <div>
+                  <button id="pcode-more" type="button">Show more</button>
+                  <button id="pcode-download" type="button">Download full p-code</button>
+                </div>
+              </div>
+            </details>
             <div id="findings-section" class="findings-section">
               <div class="findings-heading"><h3>Suspicious indicators</h3><span id="finding-count"></span></div>
               <div id="findings-list" class="findings-list"></div>
