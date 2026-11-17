@@ -22,6 +22,15 @@ let selectedFile = null;
 let pyodidePromise = null;
 let scanning = false;
 
+const macroCapableOfficeExtensions = new Set([
+  "xls", "xla", "xlsm", "xlam", "xlsb",
+  "doc", "dot", "docm", "dotm",
+  "ppt", "pot", "pps", "pptm", "potm", "ppsm",
+]);
+const macroFreeOfficeExtensions = new Set([
+  "xlsx", "xltx", "docx", "dotx", "pptx", "potx", "ppsx",
+]);
+
 const analyzePython = `
 import json
 from oletools.olevba import VBA_Parser
@@ -59,8 +68,12 @@ function setStatus(message = "", isError = false) {
 }
 
 function setSelectedFile(file) {
-  const allowedExtension = /\.(xls|xla|xlsm|xlam|xlsb|doc|dot|docm|dotm|ppt|pot|pps|pptm|potm|ppsm|rtf|docx|dotx|xlsx|xltx|pptx|potx|ppsx|slk|xml|csv)$/i;
-  if (!allowedExtension.test(file.name)) {
+  const extension = file.name.split(".").pop().toLowerCase();
+  if (macroFreeOfficeExtensions.has(extension)) {
+    setStatus(`.${extension} files cannot contain embedded VBA macros. Choose a macro-enabled format such as .xlsm, .docm, or .pptm.`, true);
+    return;
+  }
+  if (!macroCapableOfficeExtensions.has(extension)) {
     setStatus("Choose a supported Office document (for example .xlsm, .docm, or .pptm).", true);
     return;
   }
