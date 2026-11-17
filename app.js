@@ -192,7 +192,15 @@ function renderResults(result, elapsedMilliseconds) {
     summaries.push({ label: "⚠️ Excel 4.0 macros detected", value: "Review this document", tone: "danger" });
   }
   if (result.stomping) {
-    summaries.push({ label: "⚠️ VBA stomping detected", value: "Compiled VBA differs from source", tone: "danger" });
+    summaries.push({
+      label: "⚠️ VBA stomping detected",
+      value: "Compiled VBA differs from source",
+      tone: "danger",
+      note: {
+        text: "ℹ️ Note that oletools can report false positives for VBA stomping. See upstream reports:",
+        issues: [489, 521, 533, 620],
+      },
+    });
   }
 
   resultSummary.replaceChildren(...summaries.map((item) => {
@@ -207,6 +215,21 @@ function renderResults(result, elapsedMilliseconds) {
     indicator.className = "indicator";
     value.append(indicator, document.createTextNode(item.value));
     card.append(label, value);
+    if (item.note) {
+      const note = document.createElement("p");
+      note.className = "summary-note";
+      note.append(document.createTextNode(`${item.note.text} `));
+      item.note.issues.forEach((number, index) => {
+        if (index > 0) note.append(document.createTextNode(", "));
+        const link = document.createElement("a");
+        link.href = `https://github.com/decalage2/oletools/issues/${number}`;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = `#${number}`;
+        note.append(link);
+      });
+      card.append(note);
+    }
     return card;
   }));
   resultSummary.hidden = summaries.length === 0;
