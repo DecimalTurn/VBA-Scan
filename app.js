@@ -8,8 +8,6 @@ const selectedFileElement = document.querySelector("#selected-file");
 const fileNameElement = document.querySelector("#file-name");
 const fileSizeElement = document.querySelector("#file-size");
 const removeFileButton = document.querySelector("#remove-file");
-const scanButton = document.querySelector("#scan-button");
-const scanButtonLabel = document.querySelector("#scan-button-label");
 const runtimeNote = document.querySelector("#runtime-note");
 const runtimeIndicator = document.querySelector(".runtime-dot");
 const statusMessage = document.querySelector("#status-message");
@@ -74,6 +72,10 @@ function setStatus(message = "", isError = false) {
   statusMessage.classList.toggle("error", isError);
 }
 
+function logDuration(label, startedAt) {
+  console.info(`[VBA Scan] ${label}: ${(performance.now() - startedAt).toFixed(1)} ms`);
+}
+
 function setSelectedFile(file) {
   const extension = file.name.split(".").pop().toLowerCase();
   if (macroFreeOfficeExtensions.has(extension)) {
@@ -94,9 +96,9 @@ function setSelectedFile(file) {
   fileSizeElement.textContent = formatFileSize(file.size);
   selectedFileElement.hidden = false;
   dropZone.hidden = true;
-  scanButton.disabled = false;
   resultsElement.hidden = true;
   setStatus();
+  void analyzeSelectedFile();
 }
 
 function clearSelectedFile() {
@@ -104,7 +106,6 @@ function clearSelectedFile() {
   fileInput.value = "";
   selectedFileElement.hidden = true;
   dropZone.hidden = false;
-  scanButton.disabled = true;
   resultsElement.hidden = true;
   setStatus();
 }
@@ -117,13 +118,11 @@ function formatFileSize(bytes) {
 
 function setBusy(isBusy, message = "") {
   scanning = isBusy;
-  scanButton.disabled = isBusy || !selectedFile;
   removeFileButton.disabled = isBusy;
-  scanButtonLabel.textContent = isBusy ? "Analyzing…" : "Analyze document";
   runtimeNote.textContent = message || {
     loading: "Preparing analysis engine in background…",
     ready: "Analysis engine ready",
-    error: "Engine unavailable; Analyze will retry",
+    error: "Engine unavailable; remove the file and upload again to retry",
   }[engineState];
 }
 
@@ -131,31 +130,52 @@ async function loadPyodideEngine() {
   if (!pyodidePromise) {
     setEngineState("loading");
     pyodidePromise = (async () => {
+      const engineStartedAt = performance.now();
       const script = document.createElement("script");
       script.src = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/pyodide.js`;
       script.async = true;
+      const scriptStartedAt = performance.now();
       document.head.append(script);
       await new Promise((resolve, reject) => {
-        script.addEventListener("load", resolve, { once: true });
-        script.addEventListener("error", () => reject(new Error("Could not load the WebAssembly runtime. Check your internet connection and try again.")), { once: true });
+        script.addEventListener("load", () => {
+          logDuration("Pyodide loader download and evaluation", scriptStartedAt);
+          resolve();
+        }, { once: true });
+        script.addEventListener("error", () => {
+          logDuration("Pyodide loader download failed", scriptStartedAt);
+          reject(new Error("Could not load the WebAssembly runtime. Check your internet connection and try again."));
+        }, { once: true });
       });
 
+      const runtimeStartedAt = performance.now();
       const pyodide = await globalThis.loadPyodide({
         indexURL: `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`,
       });
+      logDuration("Pyodide runtime startup (includes WASM asset downloads)", runtimeStartedAt);
+
+      const micropipStartedAt = performance.now();
       await pyodide.loadPackage("micropip");
+      logDuration("micropip package load", micropipStartedAt);
+
+      const oletoolsStartedAt = performance.now();
       await pyodide.runPythonAsync(
         `import micropip\nawait micropip.install("oletools==${OLETOOLS_VERSION}")`,
       );
+      logDuration("oletools download and install", oletoolsStartedAt);
+
+      const analyzerStartedAt = performance.now();
       await pyodide.runPythonAsync(analyzePython);
+      logDuration("Python analyzer setup", analyzerStartedAt);
+      logDuration("Total analysis engine setup", engineStartedAt);
       return pyodide;
     })();
 
     pyodidePromise.then(() => {
       setEngineState("ready");
-    }, () => {
+    }, (error) => {
       setEngineState("error");
       pyodidePromise = null;
+      console.error("[VBA Scan] Analysis engine setup failed.", error);
     });
   }
   return pyodidePromise;
@@ -237,7 +257,7 @@ function renderResults(result, elapsedMilliseconds) {
 async function analyzeSelectedFile() {
   if (!selectedFile || scanning) return;
 
-  setBusy(true, "Loading WebAssembly analysis engine…");
+  setBusy(true, engineState === "ready" ? "Preparing document for analysis…" : "Loading WebAssembly analysis engine…");
   setStatus("Initializing Python and oletools. The first run may take a little longer.");
   try {
     const pyodide = await loadPyodideEngine();
@@ -272,8 +292,6 @@ fileInput.addEventListener("change", () => {
   if (fileInput.files?.[0]) setSelectedFile(fileInput.files[0]);
 });
 removeFileButton.addEventListener("click", clearSelectedFile);
-scanButton.addEventListener("click", analyzeSelectedFile);
-
 for (const eventName of ["dragenter", "dragover"]) {
   dropZone.addEventListener(eventName, (event) => {
     event.preventDefault();

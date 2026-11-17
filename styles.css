@@ -149,33 +149,13 @@ h2 { margin: 8px 0 0; font-family: var(--display); font-size: 18px; font-weight:
 .icon-button:disabled { opacity: .5; cursor: not-allowed; }
 .icon-button svg { width: 17px; height: 17px; }
 
-.panel-actions { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-top: 18px; }
+.panel-actions { margin-top: 18px; }
 .runtime-note { display: flex; align-items: center; gap: 8px; margin: 0; color: #859088; font-size: 10px; }
 .runtime-dot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: #aeb8b0; }
 .runtime-dot[data-state="loading"] { background: #d6a64c; animation: status-pulse 1.4s ease-in-out infinite; }
 .runtime-dot[data-state="ready"] { background: #83b35e; }
 .runtime-dot[data-state="error"] { background: #cf7164; }
 @keyframes status-pulse { 50% { opacity: .4; } }
-.scan-button {
-  display: flex;
-  min-height: 40px;
-  align-items: center;
-  justify-content: center;
-  gap: 13px;
-  padding: 0 15px;
-  border: 1px solid #263a2d;
-  border-radius: 5px;
-  background: #263a2d;
-  color: #f7faf6;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background .15s ease, opacity .15s ease;
-}
-
-.scan-button:hover:not(:disabled) { background: #344c39; }
-.scan-button:disabled { border-color: #d7ddd8; background: #e7ebe8; color: #909b93; cursor: not-allowed; }
-.scan-button svg { width: 16px; height: 16px; }
 .status-message { min-height: 0; margin: 0; color: #617169; font-size: 11px; line-height: 1.5; }
 .status-message:not(:empty) { margin-top: 12px; }
 .status-message.error { color: #a44437; }
@@ -229,8 +209,6 @@ h2 { margin: 8px 0 0; font-family: var(--display); font-size: 18px; font-weight:
   .panel-topline { flex-direction: column; gap: 10px; }
   .file-types { padding-top: 0; }
   .drop-zone { min-height: 190px; }
-  .panel-actions { align-items: flex-start; flex-direction: column; }
-  .scan-button { width: 100%; }
   .result-summary { grid-template-columns: 1fr; gap: 7px; }
   .summary-card { min-height: 68px; }
   .summary-value { margin-top: 7px; }
