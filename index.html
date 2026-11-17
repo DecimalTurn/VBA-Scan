@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#111a17">
+    <title>VBA Scan — Private macro analysis</title>
+    <link rel="stylesheet" href="styles.css">
+    <script type="module" src="app.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <main id="analyze" class="main-content">
+        <header class="topbar">
+          <a class="brand" href="#" aria-label="VBA Scan home">
+            <span class="brand-mark" aria-hidden="true">
+              <svg viewBox="0 0 32 32" fill="none">
+                <path d="M7 5.5h11l7 7V26H7V5.5Z" stroke="currentColor" stroke-width="1.7"/>
+                <path d="M18 5.5v7h7M11 18h10M11 22h7" stroke="currentColor" stroke-width="1.7"/>
+                <circle cx="23.5" cy="23.5" r="5.5" fill="#b9f27c" stroke="#fff" stroke-width="2"/>
+                <path d="m22 23.5 1.1 1.1 2-2.2" stroke="#111a17" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+            <span class="brand-name">vba<span>scan</span></span>
+          </a>
+          <div class="privacy-card">
+            <div class="privacy-icon" aria-hidden="true">
+              <svg viewBox="0 0 20 20" fill="none">
+                <path d="M10 2.5 16 5v4.3c0 3.8-2.6 6.8-6 8.2-3.4-1.4-6-4.4-6-8.2V5l6-2.5Z" stroke="currentColor" stroke-width="1.4"/>
+                <path d="m7.5 9.7 1.7 1.7 3.5-3.7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <div class="privacy-copy-wrap">
+              <p class="privacy-title">Private by design</p>
+              <p class="privacy-copy">Your document stays on this device.</p>
+            </div>
+            <div class="privacy-status"><span></span> LOCAL PROCESSING</div>
+          </div>
+        </header>
+
+        <div class="content-wrap">
+          <section class="intro">
+            <div class="eyebrow"><span class="eyebrow-line"></span> STATIC DOCUMENT ANALYSIS</div>
+            <h1>Look inside the macro.<br><span>Leave the file behind.</span></h1>
+            <p class="intro-copy">Inspect Office documents for VBA macros, Excel 4.0 macros, and suspicious indicators—right here in your browser.</p>
+          </section>
+
+          <section class="scan-panel" aria-labelledby="upload-heading">
+            <div class="panel-topline">
+              <div>
+                <div class="section-index">01 <span>/</span> SELECT A DOCUMENT</div>
+                <h2 id="upload-heading">Choose a file to inspect</h2>
+              </div>
+              <div class="file-types" aria-label="Supported file types">XLS · XLSM · XLSB · DOCM · PPTM · CSV</div>
+            </div>
+
+            <div id="drop-zone" class="drop-zone" role="group" aria-label="Drop an Office document here">
+              <input id="file-input" class="visually-hidden" type="file" accept=".xls,.xla,.xlsm,.xlam,.xlsb,.doc,.dot,.docm,.dotm,.ppt,.pot,.pps,.pptm,.potm,.ppsm,.rtf,.docx,.dotx,.xlsx,.xltx,.pptx,.potx,.ppsx,.slk,.xml,.csv">
+              <div class="upload-icon" aria-hidden="true">
+                <svg viewBox="0 0 48 48" fill="none">
+                  <path d="M15 33.5h-3.3a7.2 7.2 0 0 1-.7-14.4A13 13 0 0 1 36.2 22a6.1 6.1 0 0 1-.4 11.5H33" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                  <path d="M24 37V22m0 0-5.5 5.5M24 22l5.5 5.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <p class="drop-title">Drop your document here</p>
+              <p class="drop-subtitle">or <button id="browse-button" class="text-button" type="button">browse files</button> on your device</p>
+              <div class="drop-footer"><span class="mini-lock" aria-hidden="true">⌑</span> Your file is never uploaded or stored</div>
+            </div>
+
+            <div id="selected-file" class="selected-file" hidden>
+              <div class="file-chip-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <path d="M5 3.5h9l5 5V20H5V3.5Z" stroke="currentColor" stroke-width="1.5"/>
+                  <path d="M14 3.5v5h5M8 13h8M8 16h6" stroke="currentColor" stroke-width="1.5"/>
+                </svg>
+              </div>
+              <div class="selected-file-details">
+                <span id="file-name" class="selected-file-name"></span>
+                <span id="file-size" class="selected-file-size"></span>
+              </div>
+              <button id="remove-file" class="icon-button" type="button" aria-label="Remove selected file">
+                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m6 6 8 8m0-8-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+
+            <div class="panel-actions">
+              <p class="runtime-note"><span class="runtime-dot"></span><span id="runtime-note">Analysis engine loads on your first scan</span></p>
+              <button id="scan-button" class="scan-button" type="button" disabled>
+                <span id="scan-button-label">Analyze document</span>
+                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h11m0 0-4-4m4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </div>
+            <p id="status-message" class="status-message" role="status" aria-live="polite"></p>
+          </section>
+
+          <section id="results" class="results" aria-labelledby="results-heading" hidden>
+            <div class="results-heading-row">
+              <div>
+                <div class="section-index">02 <span>/</span> ANALYSIS RESULTS</div>
+                <h2 id="results-heading">Document overview</h2>
+              </div>
+              <span id="analysis-time" class="analysis-time"></span>
+            </div>
+            <div id="result-summary" class="result-summary"></div>
+            <div id="findings-section" class="findings-section">
+              <div class="findings-heading"><h3>Suspicious indicators</h3><span id="finding-count"></span></div>
+              <div id="findings-list" class="findings-list"></div>
+            </div>
+            <p class="disclaimer">Indicators are heuristic signals for manual review, not a verdict on whether a document is safe or malicious.</p>
+          </section>
+
+          <footer class="page-footer">
+            <span>NO SERVER. NO UPLOAD. JUST ANALYSIS.</span>
+            <span>Powered by <a href="https://github.com/decalage2/oletools" target="_blank" rel="noreferrer">oletools</a> + WebAssembly</span>
+          </footer>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>
