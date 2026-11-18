@@ -1,5 +1,5 @@
 const PYODIDE_VERSION = "0.27.7";
-const OLETOOLS_VERSION = "0.60.2";
+const OLETOOLS_VERSION = "0.60.3";
 const PCODE_CHUNK_SIZE = 16_384;
 const PCODE_PREVIEW_LIMIT = 524_288;
 const PCODE_DOWNLOAD_CHUNK_SIZE = 262_144;
@@ -331,10 +331,26 @@ async function loadPyodideEngine() {
       logDuration("micropip package load", micropipStartedAt);
 
       const oletoolsStartedAt = performance.now();
+      const oletoolsResponse = await fetch(new URL("dist/oletools.zip", import.meta.url), { cache: "no-store" });
+      if (!oletoolsResponse.ok) {
+        throw new Error(`Could not load the vendored oletools package (${oletoolsResponse.status}).`);
+      }
+      pyodide.FS.writeFile("/tmp/oletools.zip", new Uint8Array(await oletoolsResponse.arrayBuffer()));
       await pyodide.runPythonAsync(
-        `import micropip\nawait micropip.install("oletools==${OLETOOLS_VERSION}")`,
+        `import micropip
+await micropip.install([
+    "pyparsing>=2.1.0,<4",
+    "olefile>=0.46",
+    "easygui",
+    "colorclass",
+    "msoffcrypto-tool",
+    "pcodedmp>=1.2.5",
+])
+import sys
+sys.path.insert(0, "/tmp/oletools.zip")
+import oletools.olevba`,
       );
-      logDuration("oletools download and install", oletoolsStartedAt);
+      logDuration("Vendored oletools and dependencies setup", oletoolsStartedAt);
 
       const analyzerStartedAt = performance.now();
       await pyodide.runPythonAsync(analyzePython);
