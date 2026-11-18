@@ -14,6 +14,12 @@ python3 build-oletools-asset.py
 
 Commit the regenerated `dist/oletools.zip` with the submodule update.
 
+## Publish on GitHub Pages
+
+The GitHub Actions workflow publishes the site on pushes to `main` and can also
+be run manually from the Actions tab. To enable deployment, set the repository's
+Pages build and deployment source to **GitHub Actions** in Settings → Pages.
+
 ## Run locally
 
 Serve this directory over HTTP (ES modules and WebAssembly need a web server):
