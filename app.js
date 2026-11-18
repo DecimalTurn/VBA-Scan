@@ -288,6 +288,14 @@ function formatFileSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function getPcodeFilename(fileName) {
+  const extensionSeparator = fileName.lastIndexOf(".");
+  if (extensionSeparator <= 0 || extensionSeparator === fileName.length - 1) {
+    return `${fileName}-pcode.txt`;
+  }
+  return `${fileName.slice(0, extensionSeparator)}-${fileName.slice(extensionSeparator + 1)}-pcode.txt`;
+}
+
 function setBusy(isBusy, message = "") {
   scanning = isBusy;
   if (!isBusy) analysisSpinner.hidden = true;
@@ -587,7 +595,8 @@ pcodeSection.addEventListener("toggle", () => {
   if (pcodeSection.open && pcodeOffset === 0 && pcodeSize) void appendPcodeChunk();
 });
 pcodeDownloadButton.addEventListener("click", async () => {
-  if (pcodeDownloadInProgress || !pcodeSize) return;
+  if (pcodeDownloadInProgress || !pcodeSize || !selectedFile) return;
+  const filename = getPcodeFilename(selectedFile.name);
   pcodeDownloadInProgress = true;
   pcodeDownloadButton.disabled = true;
   removeFileButton.disabled = true;
@@ -601,7 +610,7 @@ pcodeDownloadButton.addEventListener("click", async () => {
     pcodeProgress.textContent = "Preparing p-code download…";
     if (window.showSaveFilePicker) {
       const handle = await window.showSaveFilePicker({
-        suggestedName: "vba-pcode.txt",
+        suggestedName: filename,
         types: [{ description: "Text file", accept: { "text/plain": [".txt"] } }],
       });
       writable = await handle.createWritable();
@@ -628,7 +637,7 @@ pcodeDownloadButton.addEventListener("click", async () => {
       const url = URL.createObjectURL(new Blob(chunks, { type: "text/plain;charset=utf-8" }));
       const link = document.createElement("a");
       link.href = url;
-      link.download = "vba-pcode.txt";
+      link.download = filename;
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     }

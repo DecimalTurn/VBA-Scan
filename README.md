@@ -14,6 +14,10 @@ python3 build-oletools-asset.py
 
 Commit the regenerated `dist/oletools.zip` with the submodule update.
 
+P-code downloads are named `<filename>-<file-ext>-pcode.txt` (for example,
+`invoice-xlsm-pcode.txt`). The standalone extractor writes the same name into
+its output directory.
+
 ## Publish on GitHub Pages
 
 The GitHub Actions workflow publishes the site on pushes to `main` and can also

@@ -86,7 +86,13 @@ try:
         module_count += 1
 
     pcode = parser.extract_pcode()
-    (output_dir / "pcode.txt").write_text(pcode or "", encoding="utf-8", newline="")
+    extension = input_file.suffix.lstrip(".")
+    pcode_filename = (
+        f"{input_file.stem}-{extension}-pcode.txt"
+        if extension
+        else f"{input_file.name}-pcode.txt"
+    )
+    (output_dir / pcode_filename).write_text(pcode or "", encoding="utf-8", newline="")
 finally:
     parser.close()
 
