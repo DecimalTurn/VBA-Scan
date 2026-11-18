@@ -20,6 +20,10 @@ its output directory. Browser downloads use the standard download mechanism;
 files over 10 MiB display a warning because buffering them may use substantial
 memory.
 
+Extracted VBA source is shown inline, with large sources limited to a preview,
+and can be downloaded as `<filename>-vba-source.zip` containing the individual
+module files.
+
 ## Publish on GitHub Pages
 
 The GitHub Actions workflow publishes the site on pushes to `main` and can also

@@ -4,6 +4,10 @@ const PCODE_CHUNK_SIZE = 16_384;
 const PCODE_PREVIEW_LIMIT = 524_288;
 const PCODE_DOWNLOAD_CHUNK_SIZE = 262_144;
 const PCODE_LARGE_DOWNLOAD_WARNING_BYTES = 10 * 1024 * 1024;
+const VBA_SOURCE_CHUNK_SIZE = 16_384;
+const VBA_SOURCE_PREVIEW_LIMIT = 524_288;
+const VBA_SOURCE_DOWNLOAD_CHUNK_SIZE = 262_144;
+const VBA_SOURCE_LARGE_DOWNLOAD_WARNING_BYTES = 10 * 1024 * 1024;
 const DEBUG_LOG_KEY = "vba-scan-debug-events";
 const debugMode = new URLSearchParams(window.location.search).get("debug") === "1";
 
@@ -22,6 +26,13 @@ const analysisSpinner = document.querySelector("#analysis-spinner");
 const debugLogButton = document.querySelector("#download-debug-log");
 const resultsElement = document.querySelector("#results");
 const resultSummary = document.querySelector("#result-summary");
+const vbaSourceSection = document.querySelector("#vba-source-section");
+const vbaSourceOutput = document.querySelector("#vba-source-output");
+const vbaSourceControls = document.querySelector("#vba-source-controls");
+const vbaSourceProgress = document.querySelector("#vba-source-progress");
+const vbaSourceMoreButton = document.querySelector("#vba-source-more");
+const vbaSourceDownloadButton = document.querySelector("#vba-source-download");
+const vbaSourceLargeDownloadWarning = document.querySelector("#vba-source-large-download-warning");
 const pcodeSection = document.querySelector("#pcode-section");
 const pcodeOutput = document.querySelector("#pcode-output");
 const pcodeControls = document.querySelector("#pcode-controls");
@@ -43,6 +54,15 @@ let pyodidePromise = null;
 let scanning = false;
 let engineState = "loading";
 let copyFeedbackTimeout = null;
+let vbaSourceOffset = 0;
+let vbaSourcePath = "";
+let vbaSourceSize = 0;
+let vbaSourceModuleCount = 0;
+let vbaSourceArchivePath = "";
+let vbaSourceArchiveSize = 0;
+let vbaSourceLoading = false;
+let vbaSourceDownloadInProgress = false;
+let vbaSourceDecoder = new TextDecoder("utf-8");
 let pcodeOffset = 0;
 let pcodePath = "";
 let pcodeSize = 0;
@@ -76,6 +96,8 @@ const macroFreeOfficeExtensions = new Set([
 const analyzePython = `
 import json
 import os
+import re
+import zipfile
 from oletools.olevba import VBA_Parser, VBA_Project
 
 def get_project_codepages(parser):
@@ -104,7 +126,7 @@ def get_project_codepages(parser):
                 continue
     return codepages
 
-def scan_document(path, pcode_path):
+def scan_document(path, pcode_path, vba_source_path, vba_archive_path):
     parser = VBA_Parser(path)
     try:
         has_vba = parser.detect_vba_macros()
@@ -121,6 +143,10 @@ def scan_document(path, pcode_path):
 
         pcode_size = 0
         pcode_error = None
+        vba_source_size = 0
+        vba_source_archive_size = 0
+        vba_source_module_count = 0
+        vba_source_error = None
         if has_vba or stomping:
             try:
                 pcode = parser.extract_pcode() or ""
@@ -130,6 +156,45 @@ def scan_document(path, pcode_path):
                     pcode_size = os.path.getsize(pcode_path)
             except Exception as error:
                 pcode_error = str(error)
+
+        if has_vba:
+            try:
+                used_names = set()
+                source_parts = []
+                with zipfile.ZipFile(vba_archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                    for index, (_, stream_path, vba_filename, vba_code) in enumerate(parser.extract_macros(), start=1):
+                        if stream_path == "VBA P-code" and vba_filename == "VBA_P-code.txt":
+                            continue
+                        if stream_path == "xlm_macro" and vba_filename == "xlm_macro.txt":
+                            continue
+                        filename = str(vba_filename).replace("\\\\", "/").rsplit("/", 1)[-1]
+                        if filename in ("", ".", ".."):
+                            filename = f"Module-{index}.bas"
+                        filename = re.sub(r'[<>:"/|?*\\x00-\\x1f]', "_", filename)
+                        stem, extension = os.path.splitext(filename)
+                        candidate = filename
+                        suffix = 2
+                        while candidate.casefold() in used_names:
+                            candidate = f"{stem}-{suffix}{extension}"
+                            suffix += 1
+                        used_names.add(candidate.casefold())
+                        archive.writestr(candidate, vba_code)
+                        source_parts.append(f"' ===== {candidate} =====\\n{vba_code}\\n")
+                        vba_source_module_count += 1
+                if vba_source_module_count:
+                    with open(vba_source_path, "w", encoding="utf-8", newline="") as source_file:
+                        source_file.write("\\n".join(source_parts))
+                    vba_source_size = os.path.getsize(vba_source_path)
+                    vba_source_archive_size = os.path.getsize(vba_archive_path)
+                else:
+                    os.unlink(vba_archive_path)
+            except Exception as error:
+                vba_source_error = str(error)
+                vba_source_module_count = 0
+                if os.path.exists(vba_archive_path):
+                    os.unlink(vba_archive_path)
+                if os.path.exists(vba_source_path):
+                    os.unlink(vba_source_path)
 
         findings = [
             {"type": kind, "keyword": keyword, "description": description}
@@ -143,6 +208,10 @@ def scan_document(path, pcode_path):
             "stomping_items": stomping_items,
             "pcode_size": pcode_size,
             "pcode_error": pcode_error,
+            "vba_source_size": vba_source_size,
+            "vba_source_archive_size": vba_source_archive_size,
+            "vba_source_module_count": vba_source_module_count,
+            "vba_source_error": vba_source_error,
             "project_codepages": get_project_codepages(parser),
             "findings": findings,
         })
@@ -196,14 +265,55 @@ function logDuration(label, startedAt) {
 }
 
 async function readPcodeBytes(offset, size) {
+  return readTemporaryFileBytes(pcodePath, offset, size);
+}
+
+async function readTemporaryFileBytes(path, offset, size) {
   const pyodide = await pyodidePromise;
-  const stream = pyodide.FS.open(pcodePath, "r");
+  const stream = pyodide.FS.open(path, "r");
   const buffer = new Uint8Array(size);
   try {
     const bytesRead = pyodide.FS.read(stream, buffer, 0, size, offset);
     return buffer.subarray(0, bytesRead);
   } finally {
     pyodide.FS.close(stream);
+  }
+}
+
+async function appendVbaSourceChunk() {
+  if (vbaSourceLoading || vbaSourceOffset >= Math.min(vbaSourceSize, VBA_SOURCE_PREVIEW_LIMIT)) return;
+  vbaSourceLoading = true;
+  vbaSourceMoreButton.disabled = true;
+  const startedAt = performance.now();
+  try {
+    const bytes = await readTemporaryFileBytes(
+      vbaSourcePath,
+      vbaSourceOffset,
+      VBA_SOURCE_CHUNK_SIZE,
+    );
+    vbaSourceOffset += bytes.length;
+    vbaSourceOutput.append(
+      document.createTextNode(vbaSourceDecoder.decode(bytes, { stream: vbaSourceOffset < vbaSourceSize })),
+    );
+    vbaSourceProgress.textContent =
+      `Preview: ${vbaSourceOffset.toLocaleString()} of ${vbaSourceSize.toLocaleString()} bytes · ${vbaSourceModuleCount.toLocaleString()} modules`;
+    vbaSourceMoreButton.hidden = vbaSourceOffset >= Math.min(vbaSourceSize, VBA_SOURCE_PREVIEW_LIMIT);
+    logDebug("vba_source_preview_chunk", { bytes: bytes.length, total_bytes: vbaSourceSize });
+  } catch (error) {
+    logDebug("vba_source_preview_error", getErrorDetails(error));
+    setStatus(`Could not load VBA source preview: ${error.message}`, true);
+  } finally {
+    vbaSourceMoreButton.disabled = false;
+    logDuration("VBA source preview chunk", startedAt);
+    vbaSourceLoading = false;
+  }
+}
+
+async function loadVbaSourcePreview() {
+  while (vbaSourceOffset < Math.min(vbaSourceSize, VBA_SOURCE_PREVIEW_LIMIT)) {
+    const previousOffset = vbaSourceOffset;
+    await appendVbaSourceChunk();
+    if (vbaSourceOffset === previousOffset) break;
   }
 }
 
@@ -274,13 +384,21 @@ function setSelectedFile(file) {
 function clearSelectedFile() {
   selectedFile = null;
   fileInput.value = "";
-  if (pcodePath && pyodidePromise) {
-    const path = pcodePath;
-    pcodePath = "";
+  const temporaryPaths = [pcodePath, vbaSourcePath, vbaSourceArchivePath].filter(Boolean);
+  if (temporaryPaths.length && pyodidePromise) {
     pyodidePromise.then((pyodide) => {
-      try { pyodide.FS.unlink(path); } catch {}
+      for (const path of temporaryPaths) {
+        try { pyodide.FS.unlink(path); } catch {}
+      }
     });
   }
+  pcodePath = "";
+  vbaSourcePath = "";
+  vbaSourceArchivePath = "";
+  pcodeSize = 0;
+  vbaSourceSize = 0;
+  vbaSourceArchiveSize = 0;
+  vbaSourceModuleCount = 0;
   selectedFileElement.hidden = true;
   dropZone.hidden = false;
   resultsElement.hidden = true;
@@ -299,6 +417,57 @@ function getPcodeFilename(fileName) {
     return `${fileName}-pcode.txt`;
   }
   return `${fileName.slice(0, extensionSeparator)}-${fileName.slice(extensionSeparator + 1)}-pcode.txt`;
+}
+
+function getVbaSourceArchiveFilename(fileName) {
+  const extensionSeparator = fileName.lastIndexOf(".");
+  const stem = extensionSeparator > 0 ? fileName.slice(0, extensionSeparator) : fileName;
+  return `${stem}-vba-source.zip`;
+}
+
+async function downloadVbaSourceArchive() {
+  if (vbaSourceDownloadInProgress || !vbaSourceArchiveSize || !selectedFile) return;
+  const filename = getVbaSourceArchiveFilename(selectedFile.name);
+  vbaSourceDownloadInProgress = true;
+  vbaSourceDownloadButton.disabled = true;
+  removeFileButton.disabled = true;
+  const startedAt = performance.now();
+  let written = 0;
+  logDebug("vba_source_download_started", { bytes: vbaSourceArchiveSize, download_method: "blob" });
+  try {
+    vbaSourceProgress.textContent = "Preparing VBA source archive…";
+    const chunks = [];
+    for (let offset = 0; offset < vbaSourceArchiveSize; offset += VBA_SOURCE_DOWNLOAD_CHUNK_SIZE) {
+      const requestedBytes = Math.min(VBA_SOURCE_DOWNLOAD_CHUNK_SIZE, vbaSourceArchiveSize - offset);
+      const bytes = await readTemporaryFileBytes(vbaSourceArchivePath, offset, requestedBytes);
+      if (bytes.length === 0) throw new Error("The VBA source archive ended before the expected size.");
+      chunks.push(bytes);
+      written += bytes.length;
+      vbaSourceProgress.textContent =
+        `Downloading ${written.toLocaleString()} of ${vbaSourceArchiveSize.toLocaleString()} bytes`;
+      if (written % (VBA_SOURCE_DOWNLOAD_CHUNK_SIZE * 16) === 0) {
+        logDebug("vba_source_download_progress", { bytes: written, total_bytes: vbaSourceArchiveSize });
+      }
+    }
+    const blob = new Blob(chunks, { type: "application/zip" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    vbaSourceProgress.textContent = `Download complete (${written.toLocaleString()} bytes)`;
+    logDebug("vba_source_download_complete", { bytes: written });
+  } catch (error) {
+    logDebug("vba_source_download_error", getErrorDetails(error));
+    vbaSourceProgress.textContent = "Download did not complete";
+    setStatus(`Could not download VBA source: ${error.message}`, true);
+  } finally {
+    vbaSourceDownloadButton.disabled = false;
+    removeFileButton.disabled = false;
+    vbaSourceDownloadInProgress = false;
+    logDuration("VBA source archive download", startedAt);
+  }
 }
 
 function setBusy(isBusy, message = "") {
@@ -503,13 +672,35 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
   }));
   resultSummary.hidden = summaries.length === 0;
 
+  vbaSourceSection.hidden = !result.has_vba;
+  vbaSourceOffset = 0;
+  vbaSourceSize = result.vba_source_size || 0;
+  vbaSourceModuleCount = result.vba_source_module_count || 0;
+  vbaSourceArchiveSize = result.vba_source_archive_size || 0;
+  vbaSourceLargeDownloadWarning.hidden =
+    vbaSourceArchiveSize <= VBA_SOURCE_LARGE_DOWNLOAD_WARNING_BYTES;
+  vbaSourceDecoder = new TextDecoder("utf-8");
+  vbaSourceOutput.replaceChildren();
+  vbaSourceOutput.classList.toggle("code-unavailable", !vbaSourceSize);
+  if (vbaSourceSize) {
+    vbaSourceControls.hidden = false;
+    vbaSourceDownloadButton.hidden = false;
+    vbaSourceProgress.textContent =
+      `Source ready (${vbaSourceModuleCount.toLocaleString()} modules, ${vbaSourceSize.toLocaleString()} bytes)`;
+    vbaSourceMoreButton.hidden = false;
+  } else {
+    vbaSourceControls.hidden = true;
+    vbaSourceDownloadButton.hidden = true;
+    vbaSourceOutput.textContent = result.vba_source_error || "VBA source code was not available.";
+  }
+
   pcodeSection.hidden = !result.has_vba && !result.stomping;
   pcodeOffset = 0;
   pcodeSize = result.pcode_size || 0;
   pcodeLargeDownloadWarning.hidden = pcodeSize <= PCODE_LARGE_DOWNLOAD_WARNING_BYTES;
   pcodeDecoder = new TextDecoder("utf-8");
   pcodeOutput.replaceChildren();
-  pcodeOutput.classList.toggle("pcode-unavailable", !pcodeSize);
+  pcodeOutput.classList.toggle("code-unavailable", !pcodeSize);
   if (pcodeSize) {
     pcodeControls.hidden = false;
     pcodeDownloadButton.hidden = false;
@@ -526,6 +717,9 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
     has_xlm: result.has_xlm,
     stomping: result.stomping,
     stomping_items: result.stomping_items,
+    vba_source_bytes: vbaSourceSize,
+    vba_source_archive_bytes: vbaSourceArchiveSize,
+    vba_source_module_count: vbaSourceModuleCount,
     pcode_bytes: pcodeSize,
     finding_count: result.findings.length,
   });
@@ -582,11 +776,18 @@ async function analyzeSelectedFile() {
     const pyodide = await loadPyodideEngine();
     if (!selectedFile) return;
 
-    if (pcodePath) {
-      try { pyodide.FS.unlink(pcodePath); } catch {}
-      pcodePath = "";
+    for (const temporaryPath of [pcodePath, vbaSourcePath, vbaSourceArchivePath]) {
+      if (temporaryPath) {
+        try { pyodide.FS.unlink(temporaryPath); } catch {}
+      }
     }
+    pcodePath = "";
+    vbaSourcePath = "";
+    vbaSourceArchivePath = "";
     pcodeSize = 0;
+    vbaSourceSize = 0;
+    vbaSourceArchiveSize = 0;
+    vbaSourceModuleCount = 0;
 
     setBusy(true, "Analyzing locally in your browser…");
     setStatus();
@@ -600,11 +801,15 @@ async function analyzeSelectedFile() {
     const sha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
     const path = `/tmp/vba-scan-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
     pcodePath = `/tmp/vba-scan-pcode-${Date.now()}.txt`;
+    vbaSourcePath = `/tmp/vba-scan-source-${Date.now()}.txt`;
+    vbaSourceArchivePath = `/tmp/vba-scan-source-${Date.now()}.zip`;
     pyodide.FS.writeFile(path, new Uint8Array(fileBytes));
     logDebug("analysis_started", { input_bytes: fileBytes.byteLength });
     try {
       const scanStartedAt = performance.now();
-      const rawResult = await pyodide.runPythonAsync(`scan_document(${JSON.stringify(path)}, ${JSON.stringify(pcodePath)})`);
+      const rawResult = await pyodide.runPythonAsync(
+        `scan_document(${JSON.stringify(path)}, ${JSON.stringify(pcodePath)}, ${JSON.stringify(vbaSourcePath)}, ${JSON.stringify(vbaSourceArchivePath)})`,
+      );
       logDuration("Document analysis", scanStartedAt);
       renderResults(JSON.parse(rawResult), performance.now() - startedAt, sha256, file.name);
     } finally {
@@ -628,6 +833,17 @@ fileInput.addEventListener("change", () => {
   if (fileInput.files?.[0]) setSelectedFile(fileInput.files[0]);
 });
 removeFileButton.addEventListener("click", clearSelectedFile);
+vbaSourceMoreButton.addEventListener("click", appendVbaSourceChunk);
+vbaSourceSection.addEventListener("toggle", () => {
+  if (vbaSourceSection.open && vbaSourceOffset === 0 && vbaSourceSize) {
+    if (vbaSourceSize <= VBA_SOURCE_PREVIEW_LIMIT) {
+      void loadVbaSourcePreview();
+    } else {
+      void appendVbaSourceChunk();
+    }
+  }
+});
+vbaSourceDownloadButton.addEventListener("click", downloadVbaSourceArchive);
 pcodeMoreButton.addEventListener("click", appendPcodeChunk);
 pcodeSection.addEventListener("toggle", () => {
   if (pcodeSection.open && pcodeOffset === 0 && pcodeSize) void appendPcodeChunk();

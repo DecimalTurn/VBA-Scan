@@ -157,15 +157,27 @@
               <div class="findings-heading"><h3>Suspicious indicators</h3><span id="finding-count"></span></div>
               <div id="findings-list" class="findings-list"></div>
             </div>
-            <details id="pcode-section" class="pcode-section" hidden>
+            <details id="vba-source-section" class="code-section" hidden>
+              <summary>VBA source code</summary>
+              <pre><code id="vba-source-output"></code></pre>
+              <div id="vba-source-controls" class="code-controls" hidden>
+                <span id="vba-source-progress" role="status" aria-live="polite"></span>
+                <div>
+                  <button id="vba-source-more" type="button">Show more</button>
+                  <button id="vba-source-download" type="button">Download source files (.zip)</button>
+                  <span id="vba-source-large-download-warning" class="code-download-warning" role="status" hidden>Large VBA source archives may use substantial browser memory and slow or crash this tab.</span>
+                </div>
+              </div>
+            </details>
+            <details id="pcode-section" class="code-section" hidden>
               <summary>VBA P-code disassembly</summary>
               <pre><code id="pcode-output"></code></pre>
-              <div id="pcode-controls" class="pcode-controls" hidden>
+              <div id="pcode-controls" class="code-controls" hidden>
                 <span id="pcode-progress" role="status" aria-live="polite"></span>
                 <div>
                   <button id="pcode-more" type="button">Show more</button>
                   <button id="pcode-download" type="button">Download full p-code</button>
-                  <span id="pcode-large-download-warning" class="pcode-download-warning" role="status" hidden>Large P-code downloads may use substantial browser memory and slow or crash this tab.</span>
+                  <span id="pcode-large-download-warning" class="code-download-warning" role="status" hidden>Large P-code downloads may use substantial browser memory and slow or crash this tab.</span>
                 </div>
               </div>
             </details>
