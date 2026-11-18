@@ -30,17 +30,16 @@ jobs:
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
+      - name: Prepare site
+        run: |
+          mkdir -p _site
+          cp index.html app.js styles.css theme.js LICENSE CNAME _site/
+          cp -R assets dist _site/
+
       - name: Upload site
         uses: actions/upload-pages-artifact@v3
         with:
-          path: |
-            index.html
-            app.js
-            styles.css
-            theme.js
-            LICENSE
-            assets/
-            dist/oletools.zip
+          path: _site
 
       - name: Deploy site
         id: deployment
