@@ -117,7 +117,7 @@ def scan_document(path, pcode_path):
 
         pcode_size = 0
         pcode_error = None
-        if stomping:
+        if has_vba or stomping:
             try:
                 pcode = parser.extract_pcode() or ""
                 if pcode:
@@ -467,7 +467,7 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
   }));
   resultSummary.hidden = summaries.length === 0;
 
-  pcodeSection.hidden = !result.stomping;
+  pcodeSection.hidden = !result.has_vba && !result.stomping;
   pcodeOffset = 0;
   pcodeSize = result.pcode_size || 0;
   pcodeDecoder = new TextDecoder("utf-8");

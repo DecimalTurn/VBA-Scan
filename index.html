@@ -153,6 +153,10 @@
             </table>
             <span id="copy-status" class="visually-hidden" aria-live="polite"></span>
             <div id="result-summary" class="result-summary"></div>
+            <div id="findings-section" class="findings-section">
+              <div class="findings-heading"><h3>Suspicious indicators</h3><span id="finding-count"></span></div>
+              <div id="findings-list" class="findings-list"></div>
+            </div>
             <details id="pcode-section" class="pcode-section" hidden>
               <summary>VBA P-code disassembly</summary>
               <pre><code id="pcode-output"></code></pre>
@@ -164,10 +168,6 @@
                 </div>
               </div>
             </details>
-            <div id="findings-section" class="findings-section">
-              <div class="findings-heading"><h3>Suspicious indicators</h3><span id="finding-count"></span></div>
-              <div id="findings-list" class="findings-list"></div>
-            </div>
             <p class="disclaimer">Indicators are heuristic signals for manual review, not a verdict on whether a document is safe or malicious.</p>
           </section>
 
