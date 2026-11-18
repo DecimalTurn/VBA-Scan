@@ -3,7 +3,7 @@ const OLETOOLS_VERSION = "0.60.3";
 const PCODE_CHUNK_SIZE = 16_384;
 const PCODE_PREVIEW_LIMIT = 524_288;
 const PCODE_DOWNLOAD_CHUNK_SIZE = 262_144;
-const PCODE_BLOB_FALLBACK_LIMIT = 8 * 1024 * 1024;
+const PCODE_LARGE_DOWNLOAD_WARNING_BYTES = 10 * 1024 * 1024;
 const DEBUG_LOG_KEY = "vba-scan-debug-events";
 const debugMode = new URLSearchParams(window.location.search).get("debug") === "1";
 
@@ -28,6 +28,7 @@ const pcodeControls = document.querySelector("#pcode-controls");
 const pcodeProgress = document.querySelector("#pcode-progress");
 const pcodeMoreButton = document.querySelector("#pcode-more");
 const pcodeDownloadButton = document.querySelector("#pcode-download");
+const pcodeLargeDownloadWarning = document.querySelector("#pcode-large-download-warning");
 const findingsList = document.querySelector("#findings-list");
 const findingCount = document.querySelector("#finding-count");
 const analysisTime = document.querySelector("#analysis-time");
@@ -470,6 +471,7 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
   pcodeSection.hidden = !result.has_vba && !result.stomping;
   pcodeOffset = 0;
   pcodeSize = result.pcode_size || 0;
+  pcodeLargeDownloadWarning.hidden = pcodeSize <= PCODE_LARGE_DOWNLOAD_WARNING_BYTES;
   pcodeDecoder = new TextDecoder("utf-8");
   pcodeOutput.replaceChildren();
   pcodeOutput.classList.toggle("pcode-unavailable", !pcodeSize);
@@ -597,66 +599,44 @@ pcodeSection.addEventListener("toggle", () => {
 pcodeDownloadButton.addEventListener("click", async () => {
   if (pcodeDownloadInProgress || !pcodeSize || !selectedFile) return;
   const filename = getPcodeFilename(selectedFile.name);
+  const downloadMethod = "blob";
   pcodeDownloadInProgress = true;
   pcodeDownloadButton.disabled = true;
   removeFileButton.disabled = true;
   const startedAt = performance.now();
-  let writable;
+  let offset = 0;
+  let written = 0;
   logDebug("pcode_download_started", {
     bytes: pcodeSize,
-    file_save_api_available: Boolean(window.showSaveFilePicker),
+    download_method: downloadMethod,
   });
   try {
     pcodeProgress.textContent = "Preparing p-code download…";
-    if (window.showSaveFilePicker) {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: filename,
-        types: [{ description: "Text file", accept: { "text/plain": [".txt"] } }],
-      });
-      writable = await handle.createWritable();
-    } else if (pcodeSize > PCODE_BLOB_FALLBACK_LIMIT) {
-      throw new Error("This browser cannot safely download a large p-code file. Open the page in Chrome or Edge and try again.");
-    }
-
-    const chunks = writable ? null : [];
-    let written = 0;
-    for (let offset = 0; offset < pcodeSize; offset += PCODE_DOWNLOAD_CHUNK_SIZE) {
-      const bytes = await readPcodeBytes(offset, Math.min(PCODE_DOWNLOAD_CHUNK_SIZE, pcodeSize - offset));
+    const chunks = [];
+    for (; offset < pcodeSize; offset += PCODE_DOWNLOAD_CHUNK_SIZE) {
+      const requestedBytes = Math.min(PCODE_DOWNLOAD_CHUNK_SIZE, pcodeSize - offset);
+      const bytes = await readPcodeBytes(offset, requestedBytes);
       if (bytes.length === 0) throw new Error("The p-code file ended before the expected size.");
-      if (writable) await writable.write(bytes);
-      else chunks.push(bytes);
+      chunks.push(bytes);
       written += bytes.length;
       pcodeProgress.textContent = `Downloading ${written.toLocaleString()} of ${pcodeSize.toLocaleString()} bytes`;
       if (written % (PCODE_DOWNLOAD_CHUNK_SIZE * 16) === 0) {
         logDebug("pcode_download_progress", { bytes: written, total_bytes: pcodeSize });
       }
     }
-    if (writable) {
-      await writable.close();
-    } else {
-      const url = URL.createObjectURL(new Blob(chunks, { type: "text/plain;charset=utf-8" }));
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename;
-      link.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    }
+    const blob = new Blob(chunks, { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     pcodeProgress.textContent = `Download complete (${written.toLocaleString()} bytes)`;
     logDebug("pcode_download_complete", { bytes: written });
   } catch (error) {
-    if (writable) {
-      try { await writable.abort(); } catch {}
-    }
-    if (error.name === "AbortError") {
-      pcodeProgress.textContent = "Download cancelled";
-    } else {
-      logDebug("pcode_download_error", getErrorDetails(error));
-      const message = !writable && pcodeSize > PCODE_BLOB_FALLBACK_LIMIT && window.showSaveFilePicker
-        ? `The browser could not grant file access. Open this page in Chrome or Edge. ${error.message}`
-        : error.message;
-      pcodeProgress.textContent = "Download did not complete";
-      setStatus(`Could not download p-code: ${message}`, true);
-    }
+    logDebug("pcode_download_error", getErrorDetails(error));
+    pcodeProgress.textContent = "Download did not complete";
+    setStatus(`Could not download p-code: ${error.message}`, true);
   } finally {
     pcodeDownloadButton.disabled = false;
     removeFileButton.disabled = false;

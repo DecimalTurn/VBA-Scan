@@ -16,7 +16,9 @@ Commit the regenerated `dist/oletools.zip` with the submodule update.
 
 P-code downloads are named `<filename>-<file-ext>-pcode.txt` (for example,
 `invoice-xlsm-pcode.txt`). The standalone extractor writes the same name into
-its output directory.
+its output directory. Browser downloads use the standard download mechanism;
+files over 10 MiB display a warning because buffering them may use substantial
+memory.
 
 ## Publish on GitHub Pages
 
