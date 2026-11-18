@@ -278,6 +278,7 @@ h2 { margin: 8px 0 0; font-family: var(--display); font-size: 18px; font-weight:
 .summary-value.neutral .indicator { background: var(--neutral); }
 .summary-note { margin: 10px 0 0; color: var(--text-subtle); font-size: 11px; line-height: 1.55; }
 .summary-note a { color: var(--accent); text-underline-offset: 2px; }
+.stomping-mismatches code { overflow-wrap: anywhere; }
 .pcode-section { margin-top: 14px; border: 1px solid var(--line-soft); border-radius: 6px; background: var(--control); }
 .pcode-section summary { padding: 12px 14px; color: var(--ink); font-size: 11px; font-weight: 600; cursor: pointer; }
 .pcode-section pre { max-height: 26rem; margin: 0; padding: 13px 14px; overflow: auto; border-top: 1px solid var(--line-soft); color: var(--ink); font: 10px/1.6 var(--mono); tab-size: 4; white-space: pre; }

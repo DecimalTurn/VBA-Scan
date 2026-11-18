@@ -111,10 +111,13 @@ def scan_document(path, pcode_path):
         has_xlm = parser.detect_xlm_macros()
         stomping = None
         stomping_error = None
+        stomping_items = []
         try:
             stomping = parser.detect_vba_stomping()
         except Exception as error:
             stomping_error = str(error)
+        if stomping:
+          stomping_items = getattr(parser, "vba_stomping_items", [])
 
         pcode_size = 0
         pcode_error = None
@@ -137,6 +140,7 @@ def scan_document(path, pcode_path):
             "has_xlm": has_xlm,
             "stomping": stomping,
             "stomping_error": stomping_error,
+            "stomping_items": stomping_items,
             "pcode_size": pcode_size,
             "pcode_error": pcode_error,
             "project_codepages": get_project_codepages(parser),
@@ -435,6 +439,7 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
         text: "ℹ️ Note that oletools can report false positives for VBA stomping. See upstream reports:",
         issues: [521, 533, 620],
       },
+      mismatches: result.stomping_items || [],
     });
   }
   resultSummary.replaceChildren(...summaries.map((item) => {
@@ -464,6 +469,26 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
       });
       card.append(note);
     }
+    if (item.mismatches) {
+      const details = document.createElement("p");
+      details.className = "summary-note stomping-mismatches";
+      if (item.mismatches.length === 0) {
+        details.textContent = "No exact P-code/source mismatch item was available.";
+      } else {
+        details.append(document.createTextNode("P-code items not found in source: "));
+        const shownItems = item.mismatches.slice(0, 8);
+        shownItems.forEach((mismatch, index) => {
+          if (index > 0) details.append(document.createTextNode(", "));
+          const code = document.createElement("code");
+          code.textContent = `${mismatch.kind}: ${mismatch.value}`;
+          details.append(code);
+        });
+        if (item.mismatches.length > shownItems.length) {
+          details.append(document.createTextNode(`, and ${item.mismatches.length - shownItems.length} more`));
+        }
+      }
+      card.append(details);
+    }
     return card;
   }));
   resultSummary.hidden = summaries.length === 0;
@@ -490,6 +515,7 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
     has_vba: result.has_vba,
     has_xlm: result.has_xlm,
     stomping: result.stomping,
+    stomping_items: result.stomping_items,
     pcode_bytes: pcodeSize,
     finding_count: result.findings.length,
   });
