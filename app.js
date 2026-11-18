@@ -470,24 +470,34 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
       card.append(note);
     }
     if (item.mismatches) {
-      const details = document.createElement("p");
-      details.className = "summary-note stomping-mismatches";
       if (item.mismatches.length === 0) {
+        const details = document.createElement("p");
+        details.className = "summary-note stomping-mismatches";
         details.textContent = "No exact P-code/source mismatch item was available.";
+        card.append(details);
       } else {
-        details.append(document.createTextNode("P-code items not found in source: "));
+        const details = document.createElement("details");
+        details.className = "summary-note stomping-mismatches";
+        const summary = document.createElement("summary");
+        summary.textContent = `P-code items not found in source (${item.mismatches.length})`;
+        details.append(summary);
         const shownItems = item.mismatches.slice(0, 8);
-        shownItems.forEach((mismatch, index) => {
-          if (index > 0) details.append(document.createTextNode(", "));
+        const list = document.createElement("ul");
+        shownItems.forEach((mismatch) => {
+          const entry = document.createElement("li");
           const code = document.createElement("code");
           code.textContent = `${mismatch.kind}: ${mismatch.value}`;
-          details.append(code);
+          entry.append(code);
+          list.append(entry);
         });
         if (item.mismatches.length > shownItems.length) {
-          details.append(document.createTextNode(`, and ${item.mismatches.length - shownItems.length} more`));
+          const more = document.createElement("li");
+          more.textContent = `And ${item.mismatches.length - shownItems.length} more`;
+          list.append(more);
         }
+        details.append(list);
+        card.append(details);
       }
-      card.append(details);
     }
     return card;
   }));
