@@ -433,7 +433,7 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
       tone: "danger",
       note: {
         text: "ℹ️ Note that oletools can report false positives for VBA stomping. See upstream reports:",
-        issues: [489, 521, 533, 620],
+        issues: [521, 533, 620],
       },
     });
   }
