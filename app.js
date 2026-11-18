@@ -33,6 +33,7 @@ const findingCount = document.querySelector("#finding-count");
 const analysisTime = document.querySelector("#analysis-time");
 const documentHash = document.querySelector("#document-hash");
 const documentFilename = document.querySelector("#document-filename");
+const documentCodepage = document.querySelector("#document-codepage");
 const copyHashButton = document.querySelector("#copy-hash-button");
 const copyStatus = document.querySelector("#copy-status");
 
@@ -74,7 +75,33 @@ const macroFreeOfficeExtensions = new Set([
 const analyzePython = `
 import json
 import os
-from oletools.olevba import VBA_Parser
+from oletools.olevba import VBA_Parser, VBA_Project
+
+def get_project_codepages(parser):
+    codepages = []
+    parsers = [parser]
+    while parsers:
+        current = parsers.pop()
+        parsers.extend(getattr(current, "ole_subfiles", []) or [])
+        if current.ole_file is None:
+            continue
+        try:
+            projects = current.find_vba_projects() or []
+        except Exception:
+            continue
+        for vba_root, project_path, dir_path in projects:
+            try:
+                project = VBA_Project(
+                    current.ole_file, vba_root, project_path, dir_path, current.relaxed
+                )
+                codepages.append({
+                    "project": str(project.projectname),
+                    "value": project.codepage,
+                    "name": project.codepage_name,
+                })
+            except Exception:
+                continue
+    return codepages
 
 def scan_document(path, pcode_path):
     parser = VBA_Parser(path)
@@ -111,6 +138,7 @@ def scan_document(path, pcode_path):
             "stomping_error": stomping_error,
             "pcode_size": pcode_size,
             "pcode_error": pcode_error,
+            "project_codepages": get_project_codepages(parser),
             "findings": findings,
         })
     finally:
@@ -329,6 +357,46 @@ async function loadPyodideEngine() {
 function renderResults(result, elapsedMilliseconds, sha256, fileName) {
   documentHash.textContent = sha256;
   documentFilename.textContent = fileName;
+  const projectCodepages = result.project_codepages || [];
+  const codepages = [...new Map(projectCodepages.map(({ value, name }) => [value, { value, name }])).values()];
+  documentCodepage.replaceChildren();
+  if (codepages.length === 0) {
+    documentCodepage.append(document.createTextNode("Not available"));
+  } else {
+    codepages.forEach(({ value, name }, index) => {
+      if (index > 0) documentCodepage.append(document.createTextNode(", "));
+      documentCodepage.append(document.createTextNode(String(value)));
+      const info = document.createElement("span");
+      info.className = "codepage-info";
+      const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      icon.setAttribute("viewBox", "0 0 16 16");
+      icon.setAttribute("aria-hidden", "true");
+      const outline = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      outline.setAttribute("cx", "8");
+      outline.setAttribute("cy", "8");
+      outline.setAttribute("r", "6.5");
+      outline.setAttribute("fill", "none");
+      outline.setAttribute("stroke", "currentColor");
+      outline.setAttribute("stroke-width", "1.4");
+      const stem = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      stem.setAttribute("d", "M8 7.2v4.1");
+      stem.setAttribute("stroke", "currentColor");
+      stem.setAttribute("stroke-width", "1.4");
+      stem.setAttribute("stroke-linecap", "round");
+      const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      dot.setAttribute("cx", "8");
+      dot.setAttribute("cy", "4.8");
+      dot.setAttribute("r", "0.8");
+      dot.setAttribute("fill", "currentColor");
+      icon.append(outline, stem, dot);
+      info.append(icon);
+      info.title = name || "Code page name unavailable";
+      info.setAttribute("role", "img");
+      info.setAttribute("tabindex", "0");
+      info.setAttribute("aria-label", `Code page name: ${info.title}`);
+      documentCodepage.append(document.createTextNode(" "), info);
+    });
+  }
   const summaries = [];
   if (result.has_xlm) {
     summaries.push({ label: "⚠️ Excel 4.0 macros detected", value: "Review this document", tone: "danger" });
@@ -344,7 +412,6 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
       },
     });
   }
-
   resultSummary.replaceChildren(...summaries.map((item) => {
     const card = document.createElement("div");
     card.className = "summary-card";
@@ -481,7 +548,7 @@ async function analyzeSelectedFile() {
     } finally {
       pyodide.FS.unlink(path);
     }
-    setStatus("Analysis complete. Review any indicators in context.");
+    setStatus("Analysis complete.");
   } catch (error) {
     logDebug("analysis_error", getErrorDetails(error));
     setStatus(`Analysis could not be completed: ${error.message}`, true);
