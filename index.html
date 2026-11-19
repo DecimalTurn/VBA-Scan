@@ -7,7 +7,7 @@
     <title>VBA Scan: Local macro analysis</title>
     <link rel="icon" type="image/svg+xml" href="assets/logo_notext.svg">
     <script src="theme.js"></script>
-    <link rel="stylesheet" href="styles.css?v=4">
+    <link rel="stylesheet" href="styles.css?v=5">
     <script type="module" src="app.js"></script>
   </head>
   <body>
@@ -155,8 +155,8 @@
             <div id="result-summary" class="result-summary"></div>
             <div id="findings-section" class="findings-section">
               <div class="findings-heading"><h3>Suspicious indicators</h3><span id="finding-count"></span></div>
-              <section class="finding-group" aria-labelledby="vba-source-findings-heading">
-                <div class="finding-group-heading"><h4 id="vba-source-findings-heading">In VBA Source Code</h4><span id="vba-source-finding-count"></span></div>
+              <details class="finding-group" open aria-labelledby="vba-source-findings-heading">
+                <summary class="finding-group-heading"><span class="finding-group-title" id="vba-source-findings-heading">In VBA Source Code</span><span class="finding-group-count" id="vba-source-finding-count"></span></summary>
                 <div id="vba-source-findings-list" class="findings-list"></div>
                 <details id="vba-source-section" class="code-section" hidden>
                   <summary>VBA source code</summary>
@@ -170,9 +170,9 @@
                     </div>
                   </div>
                 </details>
-              </section>
-              <section id="pcode-findings-group" class="finding-group" aria-labelledby="pcode-findings-heading">
-                <div class="finding-group-heading"><h4 id="pcode-findings-heading">⚠️ In Pre-Compiled VBA Code (ie. P-Code)</h4><span id="pcode-finding-count"></span></div>
+              </details>
+              <details id="pcode-findings-group" class="finding-group" aria-labelledby="pcode-findings-heading">
+                <summary class="finding-group-heading"><span class="finding-group-title" id="pcode-findings-heading"><span id="pcode-warning-icon" class="pcode-warning-icon" aria-hidden="true" hidden>⚠️ </span>In Pre-Compiled VBA Code (ie. P-Code)</span><span class="finding-group-count" id="pcode-finding-count"></span></summary>
                 <div id="pcode-findings-list" class="findings-list"></div>
                 <details id="pcode-section" class="code-section" hidden>
                   <summary>VBA P-code disassembly</summary>
@@ -186,7 +186,7 @@
                     </div>
                   </div>
                 </details>
-              </section>
+              </details>
             </div>
             <p class="disclaimer">Indicators are heuristic signals for manual review, not a verdict on whether a document is safe or malicious.</p>
           </section>

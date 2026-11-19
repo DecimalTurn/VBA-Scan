@@ -42,7 +42,9 @@ const pcodeDownloadButton = document.querySelector("#pcode-download");
 const pcodeLargeDownloadWarning = document.querySelector("#pcode-large-download-warning");
 const vbaSourceFindingsList = document.querySelector("#vba-source-findings-list");
 const vbaSourceFindingCount = document.querySelector("#vba-source-finding-count");
+const vbaSourceFindingsGroup = document.querySelector('[aria-labelledby="vba-source-findings-heading"]');
 const pcodeFindingsGroup = document.querySelector("#pcode-findings-group");
+const pcodeWarningIcon = document.querySelector("#pcode-warning-icon");
 const pcodeFindingsList = document.querySelector("#pcode-findings-list");
 const pcodeFindingCount = document.querySelector("#pcode-finding-count");
 const findingCount = document.querySelector("#finding-count");
@@ -740,8 +742,11 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
   const pcodeFindingSignatures = new Set(pcodeFindings.map(findingSignature));
   const pcodeFindingsAreInVbaSource = [...pcodeFindingSignatures]
     .every((signature) => vbaSourceFindingSignatures.has(signature));
-  pcodeFindingsGroup.hidden = result.stomping === false && pcodeFindingsAreInVbaSource;
-  const totalFindings = vbaSourceFindings.length + (pcodeFindingsGroup.hidden ? 0 : pcodeFindings.length);
+  const pcodeGroupShouldStartCollapsed = result.stomping === false && pcodeFindingsAreInVbaSource;
+  vbaSourceFindingsGroup.open = true;
+  pcodeFindingsGroup.open = !pcodeGroupShouldStartCollapsed;
+  pcodeWarningIcon.hidden = !result.stomping && pcodeFindingsAreInVbaSource;
+  const totalFindings = vbaSourceFindings.length + (pcodeGroupShouldStartCollapsed ? 0 : pcodeFindings.length);
   findingCount.textContent = `${totalFindings} ${totalFindings === 1 ? "indicator" : "indicators"}`;
   const renderFindingGroup = (listElement, countElement, findings, emptyMessage) => {
     countElement.textContent = `${findings.length}`;
