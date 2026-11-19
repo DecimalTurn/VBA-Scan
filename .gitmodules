@@ -1,3 +1,6 @@
 [submodule "vendor/oletools"]
 	path = submodules/oletools
 	url = https://github.com/DecimalTurn/oletools
+[submodule "submodules/pcodedmp"]
+	path = submodules/pcodedmp
+	url = https://github.com/DecimalTurn/pcodedmp
