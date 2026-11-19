@@ -738,9 +738,9 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
   const findingSignature = ({ type, keyword }) => `${type}\u0000${keyword.trim().toLowerCase()}`;
   const vbaSourceFindingSignatures = new Set(vbaSourceFindings.map(findingSignature));
   const pcodeFindingSignatures = new Set(pcodeFindings.map(findingSignature));
-  const findingsMatch = vbaSourceFindingSignatures.size === pcodeFindingSignatures.size
-    && [...vbaSourceFindingSignatures].every((signature) => pcodeFindingSignatures.has(signature));
-  pcodeFindingsGroup.hidden = result.stomping === false && findingsMatch;
+  const pcodeFindingsAreInVbaSource = [...pcodeFindingSignatures]
+    .every((signature) => vbaSourceFindingSignatures.has(signature));
+  pcodeFindingsGroup.hidden = result.stomping === false && pcodeFindingsAreInVbaSource;
   const totalFindings = vbaSourceFindings.length + (pcodeFindingsGroup.hidden ? 0 : pcodeFindings.length);
   findingCount.textContent = `${totalFindings} ${totalFindings === 1 ? "indicator" : "indicators"}`;
   const renderFindingGroup = (listElement, countElement, findings, emptyMessage) => {
