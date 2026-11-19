@@ -40,7 +40,11 @@ const pcodeProgress = document.querySelector("#pcode-progress");
 const pcodeMoreButton = document.querySelector("#pcode-more");
 const pcodeDownloadButton = document.querySelector("#pcode-download");
 const pcodeLargeDownloadWarning = document.querySelector("#pcode-large-download-warning");
-const findingsList = document.querySelector("#findings-list");
+const vbaSourceFindingsList = document.querySelector("#vba-source-findings-list");
+const vbaSourceFindingCount = document.querySelector("#vba-source-finding-count");
+const pcodeFindingsGroup = document.querySelector("#pcode-findings-group");
+const pcodeFindingsList = document.querySelector("#pcode-findings-list");
+const pcodeFindingCount = document.querySelector("#pcode-finding-count");
 const findingCount = document.querySelector("#finding-count");
 const analysisTime = document.querySelector("#analysis-time");
 const documentHash = document.querySelector("#document-hash");
@@ -196,9 +200,14 @@ def scan_document(path, pcode_path, vba_source_path, vba_archive_path):
                 if os.path.exists(vba_source_path):
                     os.unlink(vba_source_path)
 
-        findings = [
-            {"type": kind, "keyword": keyword, "description": description}
-            for kind, keyword, description in (parser.analyze_macros() or [])
+        findings_by_source = parser.analyze_macros_by_source() or {}
+        vba_source_findings = [
+          {"type": kind, "keyword": keyword, "description": description}
+          for kind, keyword, description in findings_by_source.get("vba_source", [])
+        ]
+        pcode_findings = [
+          {"type": kind, "keyword": keyword, "description": description}
+          for kind, keyword, description in findings_by_source.get("pcode", [])
         ]
         return json.dumps({
             "has_vba": has_vba,
@@ -213,7 +222,8 @@ def scan_document(path, pcode_path, vba_source_path, vba_archive_path):
             "vba_source_module_count": vba_source_module_count,
             "vba_source_error": vba_source_error,
             "project_codepages": get_project_codepages(parser),
-            "findings": findings,
+            "vba_source_findings": vba_source_findings,
+            "pcode_findings": pcode_findings,
         })
     finally:
         parser.close()
@@ -601,7 +611,7 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
   if (result.stomping) {
     summaries.push({
       label: "⚠️ VBA stomping detected",
-      value: "Compiled VBA differs from source",
+      value: "Pre-Compiled VBA differs from source",
       tone: "danger",
       note: {
         text: "ℹ️ Note that oletools can report false positives for VBA stomping. See upstream reports:",
@@ -720,29 +730,28 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
     vba_source_archive_bytes: vbaSourceArchiveSize,
     vba_source_module_count: vbaSourceModuleCount,
     pcode_bytes: pcodeSize,
-    finding_count: result.findings.length,
+    finding_count: (result.vba_source_findings || []).length + (result.pcode_findings || []).length,
   });
 
-  const isStompingFinding = (finding) =>
-    [finding.type, finding.keyword, finding.description].some(
-      (value) => typeof value === "string" && value.toLowerCase().includes("stomp"),
-    );
-  const findings = result.findings.filter((finding) => !isStompingFinding(finding));
-
-  findingCount.textContent = `${findings.length} ${findings.length === 1 ? "indicator" : "indicators"}`;
-  if (findings.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "no-findings";
-    if (!result.has_vba) {
-      const indicator = document.createElement("span");
-      indicator.className = "no-vba-indicator";
-      empty.append(indicator, document.createTextNode("No VBA code found in this file."));
+  const vbaSourceFindings = result.vba_source_findings || [];
+  const pcodeFindings = result.pcode_findings || [];
+  const findingSignature = ({ type, keyword }) => `${type}\u0000${keyword.trim().toLowerCase()}`;
+  const vbaSourceFindingSignatures = new Set(vbaSourceFindings.map(findingSignature));
+  const pcodeFindingSignatures = new Set(pcodeFindings.map(findingSignature));
+  const findingsMatch = vbaSourceFindingSignatures.size === pcodeFindingSignatures.size
+    && [...vbaSourceFindingSignatures].every((signature) => pcodeFindingSignatures.has(signature));
+  pcodeFindingsGroup.hidden = result.stomping === false && findingsMatch;
+  const totalFindings = vbaSourceFindings.length + (pcodeFindingsGroup.hidden ? 0 : pcodeFindings.length);
+  findingCount.textContent = `${totalFindings} ${totalFindings === 1 ? "indicator" : "indicators"}`;
+  const renderFindingGroup = (listElement, countElement, findings, emptyMessage) => {
+    countElement.textContent = `${findings.length}`;
+    if (findings.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "no-findings";
+      empty.textContent = emptyMessage;
+      listElement.replaceChildren(empty);
     } else {
-      empty.textContent = "No suspicious keywords were reported by oletools.";
-    }
-    findingsList.replaceChildren(empty);
-  } else {
-    findingsList.replaceChildren(...findings.map((finding) => {
+      listElement.replaceChildren(...findings.map((finding) => {
       const row = document.createElement("div");
       row.className = "finding-row";
       const type = document.createElement("div");
@@ -755,12 +764,25 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
       keyword.textContent = finding.keyword;
       const description = document.createElement("div");
       description.className = "finding-description";
-      description.textContent = finding.description;
+      description.textContent = finding.description.replace(" (option --decode to see all)", "");
       content.append(keyword, description);
       row.append(type, content);
       return row;
-    }));
-  }
+      }));
+    }
+  };
+  renderFindingGroup(
+    vbaSourceFindingsList,
+    vbaSourceFindingCount,
+    vbaSourceFindings,
+    result.has_vba ? "No suspicious indicators found in VBA source code." : "No VBA source code available.",
+  );
+  renderFindingGroup(
+    pcodeFindingsList,
+    pcodeFindingCount,
+    pcodeFindings,
+    result.pcode_size ? "No suspicious indicators found in P-code." : "P-code was not available.",
+  );
 
   analysisTime.textContent = `COMPLETED IN ${(elapsedMilliseconds / 1000).toFixed(1)}S`;
   resultsElement.hidden = false;

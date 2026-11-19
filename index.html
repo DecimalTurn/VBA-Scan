@@ -155,32 +155,39 @@
             <div id="result-summary" class="result-summary"></div>
             <div id="findings-section" class="findings-section">
               <div class="findings-heading"><h3>Suspicious indicators</h3><span id="finding-count"></span></div>
-              <div id="findings-list" class="findings-list"></div>
+              <section class="finding-group" aria-labelledby="vba-source-findings-heading">
+                <div class="finding-group-heading"><h4 id="vba-source-findings-heading">In VBA Source Code</h4><span id="vba-source-finding-count"></span></div>
+                <div id="vba-source-findings-list" class="findings-list"></div>
+                <details id="vba-source-section" class="code-section" hidden>
+                  <summary>VBA source code</summary>
+                  <pre><code id="vba-source-output"></code></pre>
+                  <div id="vba-source-controls" class="code-controls" hidden>
+                    <span id="vba-source-progress" role="status" aria-live="polite"></span>
+                    <div>
+                      <button id="vba-source-more" type="button">Show more</button>
+                      <button id="vba-source-download" type="button">Download source files (.zip)</button>
+                      <span id="vba-source-large-download-warning" class="code-download-warning" role="status" hidden>Large VBA source archives may use substantial browser memory and slow or crash this tab.</span>
+                    </div>
+                  </div>
+                </details>
+              </section>
+              <section id="pcode-findings-group" class="finding-group" aria-labelledby="pcode-findings-heading">
+                <div class="finding-group-heading"><h4 id="pcode-findings-heading">⚠️ In Pre-Compiled VBA Code (ie. P-Code)</h4><span id="pcode-finding-count"></span></div>
+                <div id="pcode-findings-list" class="findings-list"></div>
+                <details id="pcode-section" class="code-section" hidden>
+                  <summary>VBA P-code disassembly</summary>
+                  <pre><code id="pcode-output"></code></pre>
+                  <div id="pcode-controls" class="code-controls" hidden>
+                    <span id="pcode-progress" role="status" aria-live="polite"></span>
+                    <div>
+                      <button id="pcode-more" type="button">Show more</button>
+                      <button id="pcode-download" type="button">Download full p-code</button>
+                      <span id="pcode-large-download-warning" class="code-download-warning" role="status" hidden>Large P-code downloads may use substantial browser memory and slow or crash this tab.</span>
+                    </div>
+                  </div>
+                </details>
+              </section>
             </div>
-            <details id="vba-source-section" class="code-section" hidden>
-              <summary>VBA source code</summary>
-              <pre><code id="vba-source-output"></code></pre>
-              <div id="vba-source-controls" class="code-controls" hidden>
-                <span id="vba-source-progress" role="status" aria-live="polite"></span>
-                <div>
-                  <button id="vba-source-more" type="button">Show more</button>
-                  <button id="vba-source-download" type="button">Download source files (.zip)</button>
-                  <span id="vba-source-large-download-warning" class="code-download-warning" role="status" hidden>Large VBA source archives may use substantial browser memory and slow or crash this tab.</span>
-                </div>
-              </div>
-            </details>
-            <details id="pcode-section" class="code-section" hidden>
-              <summary>VBA P-code disassembly</summary>
-              <pre><code id="pcode-output"></code></pre>
-              <div id="pcode-controls" class="code-controls" hidden>
-                <span id="pcode-progress" role="status" aria-live="polite"></span>
-                <div>
-                  <button id="pcode-more" type="button">Show more</button>
-                  <button id="pcode-download" type="button">Download full p-code</button>
-                  <span id="pcode-large-download-warning" class="code-download-warning" role="status" hidden>Large P-code downloads may use substantial browser memory and slow or crash this tab.</span>
-                </div>
-              </div>
-            </details>
             <p class="disclaimer">Indicators are heuristic signals for manual review, not a verdict on whether a document is safe or malicious.</p>
           </section>
 
