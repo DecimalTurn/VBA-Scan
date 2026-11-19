@@ -4,3 +4,6 @@
 [submodule "submodules/pcodedmp"]
 	path = submodules/pcodedmp
 	url = https://github.com/DecimalTurn/pcodedmp
+[submodule "submodules/pyOpenVBA"]
+	path = submodules/pyOpenVBA
+	url = https://github.com/DecimalTurn/pyOpenVBA
