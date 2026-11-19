@@ -1,6 +1,6 @@
 # VBA-Scan
 
-A static, browser-based Office macro triage page powered by Python `oletools` running in WebAssembly. Documents are processed locally in the browser; this project does not include a server or upload endpoint.
+A static, browser-based Office macro analysis tool powered by Python `oletools` running in WebAssembly. Documents are processed locally in the browser; this project does not include a server or upload endpoint.
 
 The scanner reports VBA and Excel 4.0 macro presence, VBA stomping checks and suspicious keyword indicators.
 
