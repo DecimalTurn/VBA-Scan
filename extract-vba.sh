@@ -56,7 +56,7 @@ if [[ -e "$output_dir" && ! -d "$output_dir" ]]; then
     exit 1
 fi
 
-export PYTHONPATH="$repo_root/submodules/oletools${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH="$repo_root/submodules/oletools:$repo_root/submodules/pcodedmp${PYTHONPATH:+:$PYTHONPATH}"
 "${PYTHON:-python}" - "$input_file" "$output_dir" "$force" <<'PY'
 import sys
 from pathlib import Path

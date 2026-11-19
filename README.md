@@ -4,9 +4,9 @@ A static, browser-based Office macro analysis tool powered by Python `oletools` 
 
 The scanner reports VBA and Excel 4.0 macro presence, VBA stomping checks and suspicious keyword indicators.
 
-On the first scan, the page downloads Pyodide and the dependencies required by `oletools`. The `oletools` source itself is bundled from the `submodules/oletools` submodule as `dist/oletools.zip`, so the page runs the checked-out version, including local customizations. Scanned documents are not uploaded. An internet connection is required to initialize the analysis engine and install its dependencies.
+On the first scan, the page downloads Pyodide and the dependencies required by `oletools`. The `oletools` and `pcodedmp` sources are bundled from their submodules as `dist/oletools.zip`, so the page runs the checked-out versions, including local customizations. Scanned documents are not uploaded. An internet connection is required to initialize the analysis engine and install its dependencies.
 
-After changing the oletools submodule, rebuild its static package asset:
+After changing either package submodule, rebuild the static package asset:
 
 ```sh
 python3 build-oletools-asset.py

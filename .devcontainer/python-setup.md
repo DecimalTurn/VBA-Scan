@@ -15,6 +15,7 @@ python3 --version
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r submodules/oletools/requirements.txt
+python -m pip install --no-deps --force-reinstall -e submodules/pcodedmp
 ```
 
 The version check should report Python 3.12. If VS Code does not select the environment automatically, run **Python: Select Interpreter** and choose `.venv/bin/python`.

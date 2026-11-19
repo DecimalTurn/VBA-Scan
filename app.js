@@ -515,7 +515,7 @@ async function loadPyodideEngine() {
       const oletoolsStartedAt = performance.now();
       const oletoolsResponse = await fetch(new URL("dist/oletools.zip", import.meta.url), { cache: "no-store" });
       if (!oletoolsResponse.ok) {
-        throw new Error(`Could not load the vendored oletools package (${oletoolsResponse.status}).`);
+        throw new Error(`Could not load the bundled analysis packages (${oletoolsResponse.status}).`);
       }
       pyodide.FS.writeFile("/tmp/oletools.zip", new Uint8Array(await oletoolsResponse.arrayBuffer()));
       await pyodide.runPythonAsync(
@@ -526,7 +526,6 @@ await micropip.install([
     "easygui",
     "colorclass",
     "msoffcrypto-tool",
-    "pcodedmp>=1.2.5",
 ])
 import sys
 sys.path.insert(0, "/tmp/oletools.zip")
