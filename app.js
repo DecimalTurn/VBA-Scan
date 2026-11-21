@@ -30,6 +30,13 @@ const analysisSpinner = document.querySelector("#analysis-spinner");
 const debugLogButton = document.querySelector("#download-debug-log");
 const resultsElement = document.querySelector("#results");
 const resultSummary = document.querySelector("#result-summary");
+const extractedSourceSection = document.querySelector("#extracted-source-section");
+const openVbaSourceButton = document.querySelector("#open-vba-source");
+const openXlmSourceButton = document.querySelector("#open-xlm-source");
+const openPcodeSourceButton = document.querySelector("#open-pcode-source");
+const sourceCodeDialog = document.querySelector("#source-code-dialog");
+const sourceDialogTitle = document.querySelector("#source-dialog-title");
+const sourceDialogCloseButton = document.querySelector("#source-dialog-close");
 const vbaSourceSection = document.querySelector("#vba-source-section");
 const vbaSourceOutput = document.querySelector("#vba-source-output");
 const vbaSourceControls = document.querySelector("#vba-source-controls");
@@ -420,6 +427,30 @@ async function appendXlmChunk() {
   }
 }
 
+function openSourcePreview(sourceType) {
+  const sources = {
+    vba: { section: vbaSourceSection, title: "VBA source code", size: vbaSourceSize, offset: vbaSourceOffset },
+    xlm: { section: xlmSection, title: "XLM formula source", size: xlmSize, offset: xlmOffset },
+    pcode: { section: pcodeSection, title: "P-code source", size: pcodeSize, offset: pcodeOffset },
+  };
+  const source = sources[sourceType];
+  if (!source) return;
+  for (const section of Object.values(sources).map(({ section }) => section)) {
+    section.hidden = section !== source.section;
+  }
+  sourceDialogTitle.textContent = source.title;
+  sourceCodeDialog.showModal();
+  if (!source.size || source.offset > 0) return;
+  if (sourceType === "vba") {
+    if (vbaSourceSize <= VBA_SOURCE_PREVIEW_LIMIT) void loadVbaSourcePreview();
+    else void appendVbaSourceChunk();
+  } else if (sourceType === "xlm") {
+    void appendXlmChunk();
+  } else {
+    void appendPcodeChunk();
+  }
+}
+
 function downloadDebugLog() {
   const log = {
     app: "VBA Scan",
@@ -796,7 +827,6 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
   }));
   resultSummary.hidden = summaries.length === 0;
 
-  vbaSourceSection.hidden = !result.has_vba;
   vbaSourceOffset = 0;
   vbaSourceSize = result.vba_source_size || 0;
   vbaSourceModuleCount = result.vba_source_module_count || 0;
@@ -820,7 +850,6 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
 
   xlmFindingsGroup.hidden = !result.has_xlm;
   xlmFindingsGroup.open = true;
-  xlmSection.hidden = !result.has_xlm;
   xlmOffset = 0;
   xlmSize = result.xlm_size || 0;
   xlmMacroCount = result.xlm_macro_count || 0;
@@ -840,7 +869,6 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
     xlmOutput.textContent = result.xlm_error || "XLM macro formulas were not available.";
   }
 
-  pcodeSection.hidden = !result.has_vba && !result.stomping;
   pcodeOffset = 0;
   pcodeSize = result.pcode_size || 0;
   pcodeLargeDownloadWarning.hidden = pcodeSize <= PCODE_LARGE_DOWNLOAD_WARNING_BYTES;
@@ -857,6 +885,12 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
     pcodeDownloadButton.hidden = true;
     pcodeOutput.textContent = result.pcode_error || "P-code disassembly was not available.";
   }
+  openVbaSourceButton.hidden = !result.has_vba;
+  openXlmSourceButton.hidden = !result.has_xlm;
+  openPcodeSourceButton.hidden = !result.has_vba && !result.stomping;
+  extractedSourceSection.hidden = openVbaSourceButton.hidden
+    && openXlmSourceButton.hidden
+    && openPcodeSourceButton.hidden;
   logDebug("analysis_complete", {
     duration_ms: Math.round(elapsedMilliseconds),
     has_vba: result.has_vba,
@@ -1035,26 +1069,18 @@ fileInput.addEventListener("change", () => {
   if (fileInput.files?.[0]) setSelectedFile(fileInput.files[0]);
 });
 removeFileButton.addEventListener("click", clearSelectedFile);
-vbaSourceMoreButton.addEventListener("click", appendVbaSourceChunk);
-vbaSourceSection.addEventListener("toggle", () => {
-  if (vbaSourceSection.open && vbaSourceOffset === 0 && vbaSourceSize) {
-    if (vbaSourceSize <= VBA_SOURCE_PREVIEW_LIMIT) {
-      void loadVbaSourcePreview();
-    } else {
-      void appendVbaSourceChunk();
-    }
-  }
+openVbaSourceButton.addEventListener("click", () => openSourcePreview("vba"));
+openXlmSourceButton.addEventListener("click", () => openSourcePreview("xlm"));
+openPcodeSourceButton.addEventListener("click", () => openSourcePreview("pcode"));
+sourceDialogCloseButton.addEventListener("click", () => sourceCodeDialog.close());
+sourceCodeDialog.addEventListener("click", (event) => {
+  if (event.target === sourceCodeDialog) sourceCodeDialog.close();
 });
+vbaSourceMoreButton.addEventListener("click", appendVbaSourceChunk);
 vbaSourceDownloadButton.addEventListener("click", downloadVbaSourceArchive);
 xlmMoreButton.addEventListener("click", appendXlmChunk);
-xlmSection.addEventListener("toggle", () => {
-  if (xlmSection.open && xlmOffset === 0 && xlmSize) void appendXlmChunk();
-});
 xlmDownloadButton.addEventListener("click", downloadXlmMacros);
 pcodeMoreButton.addEventListener("click", appendPcodeChunk);
-pcodeSection.addEventListener("toggle", () => {
-  if (pcodeSection.open && pcodeOffset === 0 && pcodeSize) void appendPcodeChunk();
-});
 pcodeDownloadButton.addEventListener("click", async () => {
   if (pcodeDownloadInProgress || !pcodeSize || !selectedFile) return;
   const filename = getPcodeFilename(selectedFile.name);

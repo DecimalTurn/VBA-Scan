@@ -158,8 +158,31 @@
               <details class="finding-group" open aria-labelledby="vba-source-findings-heading">
                 <summary class="finding-group-heading"><span class="finding-group-title" id="vba-source-findings-heading"><span id="vba-source-warning-icon" class="finding-warning-icon" aria-hidden="true" hidden>⚠️ </span>In VBA Source Code</span><span class="finding-group-count" id="vba-source-finding-count"></span></summary>
                 <div id="vba-source-findings-list" class="findings-list"></div>
-                <details id="vba-source-section" class="code-section" hidden>
-                  <summary>VBA source code</summary>
+              </details>
+              <details id="xlm-findings-group" class="finding-group" hidden aria-labelledby="xlm-findings-heading">
+                <summary class="finding-group-heading"><span class="finding-group-title" id="xlm-findings-heading"><span id="xlm-warning-icon" class="finding-warning-icon" aria-hidden="true" hidden>⚠️ </span>In Excel 4.0 Macros (XLM)</span><span class="finding-group-count" id="xlm-finding-count"></span></summary>
+                <div id="xlm-findings-list" class="findings-list"></div>
+              </details>
+              <details id="pcode-findings-group" class="finding-group" aria-labelledby="pcode-findings-heading">
+                <summary class="finding-group-heading"><span class="finding-group-title" id="pcode-findings-heading"><span id="pcode-warning-icon" class="pcode-warning-icon" aria-hidden="true" hidden>⚠️ </span>In Pre-Compiled VBA Code (ie. P-Code)<span id="pcode-match-note" class="pcode-match-note" hidden>✅ All P-code indicators seem to match the ones in VBA code. You can still review them manually for extra safety.</span></span><span class="finding-group-count" id="pcode-finding-count"></span></summary>
+                <div id="pcode-findings-list" class="findings-list"></div>
+              </details>
+            </div>
+            <section id="extracted-source-section" class="extracted-source-section" hidden aria-labelledby="extracted-source-heading">
+              <div class="findings-heading"><h3 id="extracted-source-heading">Extracted Source Code</h3></div>
+              <div class="source-buttons">
+                <button id="open-vba-source" type="button" aria-haspopup="dialog" aria-controls="source-code-dialog" hidden>VBA Source</button>
+                <button id="open-xlm-source" type="button" aria-haspopup="dialog" aria-controls="source-code-dialog" hidden>XLM Formula Source</button>
+                <button id="open-pcode-source" type="button" aria-haspopup="dialog" aria-controls="source-code-dialog" hidden>P-code Source</button>
+              </div>
+            </section>
+            <dialog id="source-code-dialog" class="source-code-dialog" aria-labelledby="source-dialog-title">
+              <div class="source-dialog-shell">
+                <header class="source-dialog-heading">
+                  <h2 id="source-dialog-title">Extracted source</h2>
+                  <button id="source-dialog-close" type="button">Close</button>
+                </header>
+                <section id="vba-source-section" class="source-dialog-panel" hidden>
                   <pre><code id="vba-source-output"></code></pre>
                   <div id="vba-source-controls" class="code-controls" hidden>
                     <span id="vba-source-progress" role="status" aria-live="polite"></span>
@@ -169,13 +192,8 @@
                       <span id="vba-source-large-download-warning" class="code-download-warning" role="status" hidden>Large VBA source archives may use substantial browser memory and slow or crash this tab.</span>
                     </div>
                   </div>
-                </details>
-              </details>
-              <details id="xlm-findings-group" class="finding-group" hidden aria-labelledby="xlm-findings-heading">
-                <summary class="finding-group-heading"><span class="finding-group-title" id="xlm-findings-heading"><span id="xlm-warning-icon" class="finding-warning-icon" aria-hidden="true" hidden>⚠️ </span>In Excel 4.0 Macros (XLM)</span><span class="finding-group-count" id="xlm-finding-count"></span></summary>
-                <div id="xlm-findings-list" class="findings-list"></div>
-                <details id="xlm-section" class="code-section" hidden>
-                  <summary>XLM macro formulas</summary>
+                </section>
+                <section id="xlm-section" class="source-dialog-panel" hidden>
                   <pre><code id="xlm-output"></code></pre>
                   <div id="xlm-controls" class="code-controls" hidden>
                     <span id="xlm-progress" role="status" aria-live="polite"></span>
@@ -185,13 +203,8 @@
                       <span id="xlm-large-download-warning" class="code-download-warning" role="status" hidden>Large XLM macro files may use substantial browser memory and slow or crash this tab.</span>
                     </div>
                   </div>
-                </details>
-              </details>
-              <details id="pcode-findings-group" class="finding-group" aria-labelledby="pcode-findings-heading">
-                <summary class="finding-group-heading"><span class="finding-group-title" id="pcode-findings-heading"><span id="pcode-warning-icon" class="pcode-warning-icon" aria-hidden="true" hidden>⚠️ </span>In Pre-Compiled VBA Code (ie. P-Code)<span id="pcode-match-note" class="pcode-match-note" hidden>✅ All P-code indicators seem to match the ones in VBA code. You can still review them manually for extra safety.</span></span><span class="finding-group-count" id="pcode-finding-count"></span></summary>
-                <div id="pcode-findings-list" class="findings-list"></div>
-                <details id="pcode-section" class="code-section" hidden>
-                  <summary>VBA P-code disassembly</summary>
+                </section>
+                <section id="pcode-section" class="source-dialog-panel" hidden>
                   <pre><code id="pcode-output"></code></pre>
                   <div id="pcode-controls" class="code-controls" hidden>
                     <span id="pcode-progress" role="status" aria-live="polite"></span>
@@ -201,9 +214,9 @@
                       <span id="pcode-large-download-warning" class="code-download-warning" role="status" hidden>Large P-code downloads may use substantial browser memory and slow or crash this tab.</span>
                     </div>
                   </div>
-                </details>
-              </details>
-            </div>
+                </section>
+              </div>
+            </dialog>
             <p class="disclaimer">Indicators are heuristic signals for manual review, not a verdict on whether a document is safe or malicious.</p>
           </section>
 
