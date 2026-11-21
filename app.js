@@ -181,6 +181,7 @@ def scan_document(path, pcode_path, vba_source_path, vba_archive_path, xlm_path)
 
         pcode_size = 0
         pcode_error = None
+        pcode = ""
         vba_source_size = 0
         vba_source_archive_size = 0
         vba_source_module_count = 0
@@ -261,8 +262,46 @@ def scan_document(path, pcode_path, vba_source_path, vba_archive_path, xlm_path)
           {"type": kind, "keyword": keyword, "description": description}
           for kind, keyword, description in findings_by_source.get("vba_source", [])
         ]
+        def find_pcode_source_block(keyword):
+          pattern = re.compile(re.escape(keyword), re.IGNORECASE)
+          pcode_lines = pcode.splitlines()
+          in_module_streams = False
+          module_stream = None
+          for index, line in enumerate(pcode_lines):
+            stripped_line = line.strip()
+            if stripped_line == "Module streams:":
+              in_module_streams = True
+              continue
+            module_stream_match = re.fullmatch(r"(.+ - \\d+ bytes)", stripped_line)
+            if in_module_streams and module_stream_match:
+              module_stream = module_stream_match.group(1)
+              continue
+            line_match = re.fullmatch(r"Line #(\\d+):", stripped_line)
+            if not line_match:
+              continue
+            block = [line]
+            for candidate in pcode_lines[index + 1:]:
+              candidate_line = candidate.strip()
+              if re.fullmatch(r"Line #\\d+:", candidate_line):
+                break
+              if in_module_streams and re.fullmatch(r".+ - \\d+ bytes", candidate_line):
+                break
+              block.append(candidate)
+            if any(pattern.search(block_line) for block_line in block):
+              return {
+                "number": int(line_match.group(1)),
+                "text": "\\n".join(block).rstrip(),
+                "module_stream": module_stream,
+              }
+          return None
+
         pcode_findings = [
-          {"type": kind, "keyword": keyword, "description": description}
+          {
+            "type": kind,
+            "keyword": keyword,
+            "description": description,
+            "source_context": find_pcode_source_block(keyword),
+          }
           for kind, keyword, description in findings_by_source.get("pcode", [])
         ]
         return json.dumps({
@@ -950,6 +989,9 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
   const vbaSourceFindingsBySignature = new Map(
     vbaSourceFindings.map((finding) => [findingSignature(finding), finding]),
   );
+  const pcodeSourceLinesBySignature = new Map(
+    pcodeFindings.map((finding) => [findingSignature(finding), finding.source_context]),
+  );
   const pcodeFindingSignatures = new Set(pcodeFindings.map(findingSignature));
   const unmatchedPcodeFindingSignatures = new Set(
     [...pcodeFindingSignatures].filter((signature) => !vbaSourceFindingSignatures.has(signature)),
@@ -970,6 +1012,7 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
     emptyMessage,
     matchingFindings = null,
     unmatchedFindingSignatures = null,
+    sourceLinesByFinding = null,
   ) => {
     countElement.textContent = `${findings.length}`;
     if (findings.length === 0) {
@@ -998,6 +1041,34 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
         unmatched.className = "pcode-unmatched";
         unmatched.textContent = "⚠ No matching VBA indicator";
         content.append(unmatched);
+      }
+      const findingKey = findingSignature(finding);
+      const sourceLines = sourceLinesByFinding?.get(findingKey);
+      if (sourceLinesByFinding?.has(findingKey)) {
+        const sourceDetails = document.createElement("details");
+        sourceDetails.className = "pcode-source-lines";
+        const sourceSummary = document.createElement("summary");
+        sourceSummary.textContent = sourceLines
+          ? `Matching P-code Line #${sourceLines.number}`
+          : "P-code source block (no direct match)";
+        sourceDetails.append(sourceSummary);
+        if (sourceLines) {
+          if (sourceLines.module_stream) {
+            const moduleStream = document.createElement("div");
+            moduleStream.className = "pcode-source-module";
+            moduleStream.textContent = `Module streams: ${sourceLines.module_stream}`;
+            sourceDetails.append(moduleStream);
+          }
+          const sourceCode = document.createElement("pre");
+          sourceCode.textContent = sourceLines.text;
+          sourceDetails.append(sourceCode);
+        } else {
+          const noMatch = document.createElement("div");
+          noMatch.className = "pcode-source-lines-note";
+          noMatch.textContent = "This indicator may have been detected in decoded P-code content.";
+          sourceDetails.append(noMatch);
+        }
+        content.append(sourceDetails);
       }
       const matchingFinding = matchingFindings?.get(findingSignature(finding));
       if (matchingFinding) {
@@ -1038,6 +1109,7 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
     result.pcode_size ? "No suspicious indicators found in P-code." : "P-code was not available.",
     result.stomping === false ? vbaSourceFindingsBySignature : null,
     unmatchedPcodeFindingSignatures,
+    pcodeSourceLinesBySignature,
   );
   renderFindingGroup(
     xlmFindingsList,
