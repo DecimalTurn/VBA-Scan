@@ -4,6 +4,12 @@ A static, browser-based Office macro analysis tool powered by Python `oletools` 
 
 The scanner reports VBA and Excel 4.0 macro presence, VBA stomping checks and suspicious keyword indicators.
 
+## How to use
+
+Simply visit vba-scan.decimalturn.dev and submit a file for analysis.
+
+## How it works
+
 On the first scan, the page downloads Pyodide and the dependencies required by `oletools`. The `oletools` and `pcodedmp` sources are bundled from their submodules as `dist/oletools.zip`, so the page runs the checked-out versions, including local customizations. Scanned documents are not uploaded. An internet connection is required to initialize the analysis engine and install its dependencies.
 
 After changing either package submodule, rebuild the static package asset:
