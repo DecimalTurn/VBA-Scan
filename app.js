@@ -8,6 +8,10 @@ const VBA_SOURCE_CHUNK_SIZE = 16_384;
 const VBA_SOURCE_PREVIEW_LIMIT = 524_288;
 const VBA_SOURCE_DOWNLOAD_CHUNK_SIZE = 262_144;
 const VBA_SOURCE_LARGE_DOWNLOAD_WARNING_BYTES = 10 * 1024 * 1024;
+const XLM_CHUNK_SIZE = 16_384;
+const XLM_PREVIEW_LIMIT = 524_288;
+const XLM_DOWNLOAD_CHUNK_SIZE = 262_144;
+const XLM_LARGE_DOWNLOAD_WARNING_BYTES = 10 * 1024 * 1024;
 const DEBUG_LOG_KEY = "vba-scan-debug-events";
 const debugMode = new URLSearchParams(window.location.search).get("debug") === "1";
 
@@ -33,6 +37,16 @@ const vbaSourceProgress = document.querySelector("#vba-source-progress");
 const vbaSourceMoreButton = document.querySelector("#vba-source-more");
 const vbaSourceDownloadButton = document.querySelector("#vba-source-download");
 const vbaSourceLargeDownloadWarning = document.querySelector("#vba-source-large-download-warning");
+const xlmFindingsGroup = document.querySelector("#xlm-findings-group");
+const xlmFindingsList = document.querySelector("#xlm-findings-list");
+const xlmFindingCount = document.querySelector("#xlm-finding-count");
+const xlmSection = document.querySelector("#xlm-section");
+const xlmOutput = document.querySelector("#xlm-output");
+const xlmControls = document.querySelector("#xlm-controls");
+const xlmProgress = document.querySelector("#xlm-progress");
+const xlmMoreButton = document.querySelector("#xlm-more");
+const xlmDownloadButton = document.querySelector("#xlm-download");
+const xlmLargeDownloadWarning = document.querySelector("#xlm-large-download-warning");
 const pcodeSection = document.querySelector("#pcode-section");
 const pcodeOutput = document.querySelector("#pcode-output");
 const pcodeControls = document.querySelector("#pcode-controls");
@@ -69,6 +83,13 @@ let vbaSourceArchiveSize = 0;
 let vbaSourceLoading = false;
 let vbaSourceDownloadInProgress = false;
 let vbaSourceDecoder = new TextDecoder("utf-8");
+let xlmPath = "";
+let xlmSize = 0;
+let xlmMacroCount = 0;
+let xlmOffset = 0;
+let xlmLoading = false;
+let xlmDownloadInProgress = false;
+let xlmDecoder = new TextDecoder("utf-8");
 let pcodeOffset = 0;
 let pcodePath = "";
 let pcodeSize = 0;
@@ -132,7 +153,7 @@ def get_project_codepages(parser):
                 continue
     return codepages
 
-def scan_document(path, pcode_path, vba_source_path, vba_archive_path):
+def scan_document(path, pcode_path, vba_source_path, vba_archive_path, xlm_path):
     parser = VBA_Parser(path)
     try:
         has_vba = parser.detect_vba_macros()
@@ -153,6 +174,10 @@ def scan_document(path, pcode_path, vba_source_path, vba_archive_path):
         vba_source_archive_size = 0
         vba_source_module_count = 0
         vba_source_error = None
+        xlm_size = 0
+        xlm_error = None
+        xlm_sources = []
+        xlm_findings = []
         if has_vba or stomping:
             try:
                 pcode = parser.extract_pcode() or ""
@@ -202,6 +227,24 @@ def scan_document(path, pcode_path, vba_source_path, vba_archive_path):
                 if os.path.exists(vba_source_path):
                     os.unlink(vba_source_path)
 
+        if has_xlm:
+          try:
+            xlm_sources = parser.extract_xlm_macros() or []
+            xlm_findings = [
+              {"type": kind, "keyword": keyword, "description": description}
+              for kind, keyword, description in parser.analyze_xlm_macros()
+            ]
+            if xlm_sources:
+              with open(xlm_path, "w", encoding="utf-8", newline="") as xlm_file:
+                for index, (location, code) in enumerate(xlm_sources):
+                  if index > 0:
+                    xlm_file.write("\\n")
+                  xlm_file.write(f"===== {location} =====\\n")
+                  xlm_file.write(code.rstrip() + "\\n")
+              xlm_size = os.path.getsize(xlm_path)
+          except Exception as error:
+            xlm_error = str(error)
+
         findings_by_source = parser.analyze_macros_by_source() or {}
         vba_source_findings = [
           {"type": kind, "keyword": keyword, "description": description}
@@ -223,9 +266,13 @@ def scan_document(path, pcode_path, vba_source_path, vba_archive_path):
             "vba_source_archive_size": vba_source_archive_size,
             "vba_source_module_count": vba_source_module_count,
             "vba_source_error": vba_source_error,
+            "xlm_size": xlm_size,
+            "xlm_error": xlm_error,
+            "xlm_macro_count": len(xlm_sources),
             "project_codepages": get_project_codepages(parser),
             "vba_source_findings": vba_source_findings,
             "pcode_findings": pcode_findings,
+            "xlm_findings": xlm_findings,
         })
     finally:
         parser.close()
@@ -351,6 +398,25 @@ async function appendPcodeChunk() {
   }
 }
 
+async function appendXlmChunk() {
+  if (xlmLoading || xlmOffset >= Math.min(xlmSize, XLM_PREVIEW_LIMIT)) return;
+  xlmLoading = true;
+  xlmMoreButton.disabled = true;
+  try {
+    const bytes = await readTemporaryFileBytes(xlmPath, xlmOffset, XLM_CHUNK_SIZE);
+    xlmOffset += bytes.length;
+    xlmOutput.append(document.createTextNode(xlmDecoder.decode(bytes, { stream: xlmOffset < xlmSize })));
+    xlmProgress.textContent = `Preview: ${xlmOffset.toLocaleString()} of ${xlmSize.toLocaleString()} bytes`;
+    xlmMoreButton.hidden = xlmOffset >= Math.min(xlmSize, XLM_PREVIEW_LIMIT);
+  } catch (error) {
+    logDebug("xlm_preview_error", getErrorDetails(error));
+    setStatus(`Could not load XLM macro preview: ${error.message}`, true);
+  } finally {
+    xlmMoreButton.disabled = false;
+    xlmLoading = false;
+  }
+}
+
 function downloadDebugLog() {
   const log = {
     app: "VBA Scan",
@@ -396,7 +462,7 @@ function setSelectedFile(file) {
 function clearSelectedFile() {
   selectedFile = null;
   fileInput.value = "";
-  const temporaryPaths = [pcodePath, vbaSourcePath, vbaSourceArchivePath].filter(Boolean);
+  const temporaryPaths = [pcodePath, vbaSourcePath, vbaSourceArchivePath, xlmPath].filter(Boolean);
   if (temporaryPaths.length && pyodidePromise) {
     pyodidePromise.then((pyodide) => {
       for (const path of temporaryPaths) {
@@ -407,10 +473,13 @@ function clearSelectedFile() {
   pcodePath = "";
   vbaSourcePath = "";
   vbaSourceArchivePath = "";
+  xlmPath = "";
   pcodeSize = 0;
   vbaSourceSize = 0;
   vbaSourceArchiveSize = 0;
   vbaSourceModuleCount = 0;
+  xlmSize = 0;
+  xlmMacroCount = 0;
   selectedFileElement.hidden = true;
   dropZone.hidden = false;
   resultsElement.hidden = true;
@@ -435,6 +504,12 @@ function getVbaSourceArchiveFilename(fileName) {
   const extensionSeparator = fileName.lastIndexOf(".");
   const stem = extensionSeparator > 0 ? fileName.slice(0, extensionSeparator) : fileName;
   return `${stem}-vba-source.zip`;
+}
+
+function getXlmFilename(fileName) {
+  const extensionSeparator = fileName.lastIndexOf(".");
+  const stem = extensionSeparator > 0 ? fileName.slice(0, extensionSeparator) : fileName;
+  return `${stem}-xlm-macros.txt`;
 }
 
 async function downloadVbaSourceArchive() {
@@ -479,6 +554,41 @@ async function downloadVbaSourceArchive() {
     removeFileButton.disabled = false;
     vbaSourceDownloadInProgress = false;
     logDuration("VBA source archive download", startedAt);
+  }
+}
+
+async function downloadXlmMacros() {
+  if (xlmDownloadInProgress || !xlmSize || !selectedFile) return;
+  xlmDownloadInProgress = true;
+  xlmDownloadButton.disabled = true;
+  removeFileButton.disabled = true;
+  let written = 0;
+  try {
+    const chunks = [];
+    for (let offset = 0; offset < xlmSize; offset += XLM_DOWNLOAD_CHUNK_SIZE) {
+      const requestedBytes = Math.min(XLM_DOWNLOAD_CHUNK_SIZE, xlmSize - offset);
+      const bytes = await readTemporaryFileBytes(xlmPath, offset, requestedBytes);
+      if (bytes.length === 0) throw new Error("The XLM macro file ended before the expected size.");
+      chunks.push(bytes);
+      written += bytes.length;
+      xlmProgress.textContent = `Downloading ${written.toLocaleString()} of ${xlmSize.toLocaleString()} bytes`;
+    }
+    const blob = new Blob(chunks, { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = getXlmFilename(selectedFile.name);
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    xlmProgress.textContent = `Download complete (${written.toLocaleString()} bytes)`;
+  } catch (error) {
+    logDebug("xlm_download_error", getErrorDetails(error));
+    xlmProgress.textContent = "Download did not complete";
+    setStatus(`Could not download XLM macros: ${error.message}`, true);
+  } finally {
+    xlmDownloadButton.disabled = false;
+    removeFileButton.disabled = false;
+    xlmDownloadInProgress = false;
   }
 }
 
@@ -705,6 +815,28 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
     vbaSourceOutput.textContent = result.vba_source_error || "VBA source code was not available.";
   }
 
+  xlmFindingsGroup.hidden = !result.has_xlm;
+  xlmFindingsGroup.open = true;
+  xlmSection.hidden = !result.has_xlm;
+  xlmOffset = 0;
+  xlmSize = result.xlm_size || 0;
+  xlmMacroCount = result.xlm_macro_count || 0;
+  xlmLargeDownloadWarning.hidden = xlmSize <= XLM_LARGE_DOWNLOAD_WARNING_BYTES;
+  xlmDecoder = new TextDecoder("utf-8");
+  xlmOutput.replaceChildren();
+  xlmOutput.classList.toggle("code-unavailable", !xlmSize);
+  if (xlmSize) {
+    xlmControls.hidden = false;
+    xlmDownloadButton.hidden = false;
+    xlmProgress.textContent =
+      `Macros ready (${xlmMacroCount.toLocaleString()} locations, ${xlmSize.toLocaleString()} bytes)`;
+    xlmMoreButton.hidden = false;
+  } else {
+    xlmControls.hidden = true;
+    xlmDownloadButton.hidden = true;
+    xlmOutput.textContent = result.xlm_error || "XLM macro formulas were not available.";
+  }
+
   pcodeSection.hidden = !result.has_vba && !result.stomping;
   pcodeOffset = 0;
   pcodeSize = result.pcode_size || 0;
@@ -732,11 +864,14 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
     vba_source_archive_bytes: vbaSourceArchiveSize,
     vba_source_module_count: vbaSourceModuleCount,
     pcode_bytes: pcodeSize,
-    finding_count: (result.vba_source_findings || []).length + (result.pcode_findings || []).length,
+    xlm_bytes: xlmSize,
+    xlm_macro_count: xlmMacroCount,
+    finding_count: (result.vba_source_findings || []).length + (result.pcode_findings || []).length + (result.xlm_findings || []).length,
   });
 
   const vbaSourceFindings = result.vba_source_findings || [];
   const pcodeFindings = result.pcode_findings || [];
+  const xlmFindings = result.xlm_findings || [];
   const findingSignature = ({ type, keyword }) => `${type}\u0000${keyword.trim().toLowerCase()}`;
   const vbaSourceFindingSignatures = new Set(vbaSourceFindings.map(findingSignature));
   const pcodeFindingSignatures = new Set(pcodeFindings.map(findingSignature));
@@ -746,7 +881,7 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
   vbaSourceFindingsGroup.open = true;
   pcodeFindingsGroup.open = !pcodeGroupShouldStartCollapsed;
   pcodeWarningIcon.hidden = !result.stomping && pcodeFindingsAreInVbaSource;
-  const totalFindings = vbaSourceFindings.length + (pcodeGroupShouldStartCollapsed ? 0 : pcodeFindings.length);
+  const totalFindings = vbaSourceFindings.length + (pcodeGroupShouldStartCollapsed ? 0 : pcodeFindings.length) + xlmFindings.length;
   findingCount.textContent = `${totalFindings} ${totalFindings === 1 ? "indicator" : "indicators"}`;
   const renderFindingGroup = (listElement, countElement, findings, emptyMessage) => {
     countElement.textContent = `${findings.length}`;
@@ -788,6 +923,12 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
     pcodeFindings,
     result.pcode_size ? "No suspicious indicators found in P-code." : "P-code was not available.",
   );
+  renderFindingGroup(
+    xlmFindingsList,
+    xlmFindingCount,
+    xlmFindings,
+    result.has_xlm ? "No suspicious indicators found in XLM macros." : "No XLM macros available.",
+  );
 
   analysisTime.textContent = `COMPLETED IN ${(elapsedMilliseconds / 1000).toFixed(1)}S`;
   resultsElement.hidden = false;
@@ -802,7 +943,7 @@ async function analyzeSelectedFile() {
     const pyodide = await loadPyodideEngine();
     if (!selectedFile) return;
 
-    for (const temporaryPath of [pcodePath, vbaSourcePath, vbaSourceArchivePath]) {
+    for (const temporaryPath of [pcodePath, vbaSourcePath, vbaSourceArchivePath, xlmPath]) {
       if (temporaryPath) {
         try { pyodide.FS.unlink(temporaryPath); } catch {}
       }
@@ -810,10 +951,13 @@ async function analyzeSelectedFile() {
     pcodePath = "";
     vbaSourcePath = "";
     vbaSourceArchivePath = "";
+    xlmPath = "";
     pcodeSize = 0;
     vbaSourceSize = 0;
     vbaSourceArchiveSize = 0;
     vbaSourceModuleCount = 0;
+    xlmSize = 0;
+    xlmMacroCount = 0;
 
     setBusy(true, "Analyzing locally in your browser…");
     setStatus();
@@ -829,12 +973,13 @@ async function analyzeSelectedFile() {
     pcodePath = `/tmp/vba-scan-pcode-${Date.now()}.txt`;
     vbaSourcePath = `/tmp/vba-scan-source-${Date.now()}.txt`;
     vbaSourceArchivePath = `/tmp/vba-scan-source-${Date.now()}.zip`;
+    xlmPath = `/tmp/vba-scan-xlm-${Date.now()}.txt`;
     pyodide.FS.writeFile(path, new Uint8Array(fileBytes));
     logDebug("analysis_started", { input_bytes: fileBytes.byteLength });
     try {
       const scanStartedAt = performance.now();
       const rawResult = await pyodide.runPythonAsync(
-        `scan_document(${JSON.stringify(path)}, ${JSON.stringify(pcodePath)}, ${JSON.stringify(vbaSourcePath)}, ${JSON.stringify(vbaSourceArchivePath)})`,
+        `scan_document(${JSON.stringify(path)}, ${JSON.stringify(pcodePath)}, ${JSON.stringify(vbaSourcePath)}, ${JSON.stringify(vbaSourceArchivePath)}, ${JSON.stringify(xlmPath)})`,
       );
       logDuration("Document analysis", scanStartedAt);
       renderResults(JSON.parse(rawResult), performance.now() - startedAt, sha256, file.name);
@@ -870,6 +1015,11 @@ vbaSourceSection.addEventListener("toggle", () => {
   }
 });
 vbaSourceDownloadButton.addEventListener("click", downloadVbaSourceArchive);
+xlmMoreButton.addEventListener("click", appendXlmChunk);
+xlmSection.addEventListener("toggle", () => {
+  if (xlmSection.open && xlmOffset === 0 && xlmSize) void appendXlmChunk();
+});
+xlmDownloadButton.addEventListener("click", downloadXlmMacros);
 pcodeMoreButton.addEventListener("click", appendPcodeChunk);
 pcodeSection.addEventListener("toggle", () => {
   if (pcodeSection.open && pcodeOffset === 0 && pcodeSize) void appendPcodeChunk();
