@@ -6,7 +6,7 @@ The scanner reports VBA and Excel 4.0 macro presence, VBA stomping checks and su
 
 ## How to use
 
-Simply visit vba-scan.decimalturn.dev and submit a file for analysis.
+Simply visit https://vba-scan.decimalturn.dev and submit a file for local analysis.
 
 ## How it works
 
