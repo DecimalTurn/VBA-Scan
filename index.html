@@ -156,7 +156,7 @@
             <div id="findings-section" class="findings-section">
               <div class="findings-heading"><h3>Suspicious indicators</h3><span id="finding-count"></span></div>
               <details class="finding-group" open aria-labelledby="vba-source-findings-heading">
-                <summary class="finding-group-heading"><span class="finding-group-title" id="vba-source-findings-heading">In VBA Source Code</span><span class="finding-group-count" id="vba-source-finding-count"></span></summary>
+                <summary class="finding-group-heading"><span class="finding-group-title" id="vba-source-findings-heading"><span id="vba-source-warning-icon" class="finding-warning-icon" aria-hidden="true" hidden>⚠️ </span>In VBA Source Code</span><span class="finding-group-count" id="vba-source-finding-count"></span></summary>
                 <div id="vba-source-findings-list" class="findings-list"></div>
                 <details id="vba-source-section" class="code-section" hidden>
                   <summary>VBA source code</summary>
@@ -172,7 +172,7 @@
                 </details>
               </details>
               <details id="xlm-findings-group" class="finding-group" hidden aria-labelledby="xlm-findings-heading">
-                <summary class="finding-group-heading"><span class="finding-group-title" id="xlm-findings-heading">In Excel 4.0 Macros (XLM)</span><span class="finding-group-count" id="xlm-finding-count"></span></summary>
+                <summary class="finding-group-heading"><span class="finding-group-title" id="xlm-findings-heading"><span id="xlm-warning-icon" class="finding-warning-icon" aria-hidden="true" hidden>⚠️ </span>In Excel 4.0 Macros (XLM)</span><span class="finding-group-count" id="xlm-finding-count"></span></summary>
                 <div id="xlm-findings-list" class="findings-list"></div>
                 <details id="xlm-section" class="code-section" hidden>
                   <summary>XLM macro formulas</summary>
@@ -188,7 +188,7 @@
                 </details>
               </details>
               <details id="pcode-findings-group" class="finding-group" aria-labelledby="pcode-findings-heading">
-                <summary class="finding-group-heading"><span class="finding-group-title" id="pcode-findings-heading"><span id="pcode-warning-icon" class="pcode-warning-icon" aria-hidden="true" hidden>⚠️ </span>In Pre-Compiled VBA Code (ie. P-Code)</span><span class="finding-group-count" id="pcode-finding-count"></span></summary>
+                <summary class="finding-group-heading"><span class="finding-group-title" id="pcode-findings-heading"><span id="pcode-warning-icon" class="pcode-warning-icon" aria-hidden="true" hidden>⚠️ </span>In Pre-Compiled VBA Code (ie. P-Code)<span id="pcode-match-note" class="pcode-match-note" hidden>✅ All P-code indicators seem to match the ones in VBA code. You can still review them manually for extra safety.</span></span><span class="finding-group-count" id="pcode-finding-count"></span></summary>
                 <div id="pcode-findings-list" class="findings-list"></div>
                 <details id="pcode-section" class="code-section" hidden>
                   <summary>VBA P-code disassembly</summary>

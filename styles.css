@@ -304,6 +304,8 @@ h2 { margin: 8px 0 0; font-family: var(--display); font-size: 18px; font-weight:
 .finding-group-heading::before { width: 0; height: 0; flex: none; margin-right: 8px; border-top: 4px solid transparent; border-bottom: 4px solid transparent; border-left: 5px solid var(--text-subtle); content: ""; transition: transform .16s ease; }
 .finding-group[open] > .finding-group-heading::before { transform: rotate(90deg); }
 .finding-group-title { flex: 1; color: var(--text-muted); font-size: 12px; font-weight: 600; text-align: left; }
+.pcode-match-note { display: block; margin-top: 4px; color: var(--text-subtle); font-size: 10px; font-weight: 400; line-height: 1.4; }
+.pcode-match-note[hidden] { display: none; }
 .finding-group-count { flex: none; margin-left: auto; color: var(--text-subtle); font-family: var(--mono); font-size: 9px; }
 .findings-list { display: grid; }
 .finding-row { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--line-faint); }

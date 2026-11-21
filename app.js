@@ -57,8 +57,11 @@ const pcodeLargeDownloadWarning = document.querySelector("#pcode-large-download-
 const vbaSourceFindingsList = document.querySelector("#vba-source-findings-list");
 const vbaSourceFindingCount = document.querySelector("#vba-source-finding-count");
 const vbaSourceFindingsGroup = document.querySelector('[aria-labelledby="vba-source-findings-heading"]');
+const vbaSourceWarningIcon = document.querySelector("#vba-source-warning-icon");
+const xlmWarningIcon = document.querySelector("#xlm-warning-icon");
 const pcodeFindingsGroup = document.querySelector("#pcode-findings-group");
 const pcodeWarningIcon = document.querySelector("#pcode-warning-icon");
+const pcodeMatchNote = document.querySelector("#pcode-match-note");
 const pcodeFindingsList = document.querySelector("#pcode-findings-list");
 const pcodeFindingCount = document.querySelector("#pcode-finding-count");
 const findingCount = document.querySelector("#finding-count");
@@ -872,6 +875,8 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
   const vbaSourceFindings = result.vba_source_findings || [];
   const pcodeFindings = result.pcode_findings || [];
   const xlmFindings = result.xlm_findings || [];
+  vbaSourceWarningIcon.hidden = vbaSourceFindings.length === 0;
+  xlmWarningIcon.hidden = xlmFindings.length === 0;
   const findingSignature = ({ type, keyword }) => `${type}\u0000${keyword.trim().toLowerCase()}`;
   const vbaSourceFindingSignatures = new Set(vbaSourceFindings.map(findingSignature));
   const vbaSourceFindingsBySignature = new Map(
@@ -884,6 +889,7 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
   vbaSourceFindingsGroup.open = true;
   pcodeFindingsGroup.open = !pcodeGroupShouldStartCollapsed;
   pcodeWarningIcon.hidden = !result.stomping && pcodeFindingsAreInVbaSource;
+  pcodeMatchNote.hidden = !(result.stomping === false && pcodeFindings.length > 0 && pcodeFindingsAreInVbaSource);
   const totalFindings = vbaSourceFindings.length + pcodeFindings.length + xlmFindings.length;
   findingCount.textContent = `${totalFindings} ${totalFindings === 1 ? "indicator" : "indicators"}`;
   const renderFindingGroup = (listElement, countElement, findings, emptyMessage, matchingFindings = null) => {
