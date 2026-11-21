@@ -43,6 +43,7 @@ const vbaSourceControls = document.querySelector("#vba-source-controls");
 const vbaSourceProgress = document.querySelector("#vba-source-progress");
 const vbaSourceMoreButton = document.querySelector("#vba-source-more");
 const vbaSourceDownloadButton = document.querySelector("#vba-source-download");
+const vbaSourceTextDownloadButton = document.querySelector("#vba-source-text-download");
 const vbaSourceLargeDownloadWarning = document.querySelector("#vba-source-large-download-warning");
 const xlmFindingsGroup = document.querySelector("#xlm-findings-group");
 const xlmFindingsList = document.querySelector("#xlm-findings-list");
@@ -540,37 +541,43 @@ function getVbaSourceArchiveFilename(fileName) {
   return `${stem}-vba-source.zip`;
 }
 
+function getVbaSourceTextFilename(fileName) {
+  const extensionSeparator = fileName.lastIndexOf(".");
+  const stem = extensionSeparator > 0 ? fileName.slice(0, extensionSeparator) : fileName;
+  return `${stem}-vba-source.txt`;
+}
+
 function getXlmFilename(fileName) {
   const extensionSeparator = fileName.lastIndexOf(".");
   const stem = extensionSeparator > 0 ? fileName.slice(0, extensionSeparator) : fileName;
   return `${stem}-xlm-macros.txt`;
 }
 
-async function downloadVbaSourceArchive() {
-  if (vbaSourceDownloadInProgress || !vbaSourceArchiveSize || !selectedFile) return;
-  const filename = getVbaSourceArchiveFilename(selectedFile.name);
+async function downloadVbaSource(path, size, filename, mimeType, label, eventPrefix) {
+  if (vbaSourceDownloadInProgress || !size || !selectedFile) return;
   vbaSourceDownloadInProgress = true;
   vbaSourceDownloadButton.disabled = true;
+  vbaSourceTextDownloadButton.disabled = true;
   removeFileButton.disabled = true;
   const startedAt = performance.now();
   let written = 0;
-  logDebug("vba_source_download_started", { bytes: vbaSourceArchiveSize, download_method: "blob" });
+  logDebug(`${eventPrefix}_started`, { bytes: size, download_method: "blob" });
   try {
-    vbaSourceProgress.textContent = "Preparing VBA source archive…";
+    vbaSourceProgress.textContent = `Preparing ${label}…`;
     const chunks = [];
-    for (let offset = 0; offset < vbaSourceArchiveSize; offset += VBA_SOURCE_DOWNLOAD_CHUNK_SIZE) {
-      const requestedBytes = Math.min(VBA_SOURCE_DOWNLOAD_CHUNK_SIZE, vbaSourceArchiveSize - offset);
-      const bytes = await readTemporaryFileBytes(vbaSourceArchivePath, offset, requestedBytes);
-      if (bytes.length === 0) throw new Error("The VBA source archive ended before the expected size.");
+    for (let offset = 0; offset < size; offset += VBA_SOURCE_DOWNLOAD_CHUNK_SIZE) {
+      const requestedBytes = Math.min(VBA_SOURCE_DOWNLOAD_CHUNK_SIZE, size - offset);
+      const bytes = await readTemporaryFileBytes(path, offset, requestedBytes);
+      if (bytes.length === 0) throw new Error(`The ${label} ended before the expected size.`);
       chunks.push(bytes);
       written += bytes.length;
       vbaSourceProgress.textContent =
-        `Downloading ${written.toLocaleString()} of ${vbaSourceArchiveSize.toLocaleString()} bytes`;
+        `Downloading ${written.toLocaleString()} of ${size.toLocaleString()} bytes`;
       if (written % (VBA_SOURCE_DOWNLOAD_CHUNK_SIZE * 16) === 0) {
-        logDebug("vba_source_download_progress", { bytes: written, total_bytes: vbaSourceArchiveSize });
+        logDebug(`${eventPrefix}_progress`, { bytes: written, total_bytes: size });
       }
     }
-    const blob = new Blob(chunks, { type: "application/zip" });
+    const blob = new Blob(chunks, { type: mimeType });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -578,17 +585,42 @@ async function downloadVbaSourceArchive() {
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     vbaSourceProgress.textContent = `Download complete (${written.toLocaleString()} bytes)`;
-    logDebug("vba_source_download_complete", { bytes: written });
+    logDebug(`${eventPrefix}_complete`, { bytes: written });
   } catch (error) {
-    logDebug("vba_source_download_error", getErrorDetails(error));
+    logDebug(`${eventPrefix}_error`, getErrorDetails(error));
     vbaSourceProgress.textContent = "Download did not complete";
     setStatus(`Could not download VBA source: ${error.message}`, true);
   } finally {
     vbaSourceDownloadButton.disabled = false;
+    vbaSourceTextDownloadButton.disabled = false;
     removeFileButton.disabled = false;
     vbaSourceDownloadInProgress = false;
-    logDuration("VBA source archive download", startedAt);
+    logDuration(`${label} download`, startedAt);
   }
+}
+
+function downloadVbaSourceArchive() {
+  if (!selectedFile) return;
+  return downloadVbaSource(
+    vbaSourceArchivePath,
+    vbaSourceArchiveSize,
+    getVbaSourceArchiveFilename(selectedFile.name),
+    "application/zip",
+    "VBA source archive",
+    "vba_source_download",
+  );
+}
+
+function downloadVbaSourceText() {
+  if (!selectedFile) return;
+  return downloadVbaSource(
+    vbaSourcePath,
+    vbaSourceSize,
+    getVbaSourceTextFilename(selectedFile.name),
+    "text/plain;charset=utf-8",
+    "VBA source text",
+    "vba_source_text_download",
+  );
 }
 
 async function downloadXlmMacros() {
@@ -832,19 +864,21 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
   vbaSourceModuleCount = result.vba_source_module_count || 0;
   vbaSourceArchiveSize = result.vba_source_archive_size || 0;
   vbaSourceLargeDownloadWarning.hidden =
-    vbaSourceArchiveSize <= VBA_SOURCE_LARGE_DOWNLOAD_WARNING_BYTES;
+    Math.max(vbaSourceArchiveSize, vbaSourceSize) <= VBA_SOURCE_LARGE_DOWNLOAD_WARNING_BYTES;
   vbaSourceDecoder = new TextDecoder("utf-8");
   vbaSourceOutput.replaceChildren();
   vbaSourceOutput.classList.toggle("code-unavailable", !vbaSourceSize);
   if (vbaSourceSize) {
     vbaSourceControls.hidden = false;
     vbaSourceDownloadButton.hidden = false;
+    vbaSourceTextDownloadButton.hidden = false;
     vbaSourceProgress.textContent =
       `Source ready (${vbaSourceModuleCount.toLocaleString()} modules, ${vbaSourceSize.toLocaleString()} bytes)`;
     vbaSourceMoreButton.hidden = false;
   } else {
     vbaSourceControls.hidden = true;
     vbaSourceDownloadButton.hidden = true;
+    vbaSourceTextDownloadButton.hidden = true;
     vbaSourceOutput.textContent = result.vba_source_error || "VBA source code was not available.";
   }
 
@@ -1095,6 +1129,7 @@ sourceCodeDialog.addEventListener("click", (event) => {
 });
 vbaSourceMoreButton.addEventListener("click", appendVbaSourceChunk);
 vbaSourceDownloadButton.addEventListener("click", downloadVbaSourceArchive);
+vbaSourceTextDownloadButton.addEventListener("click", downloadVbaSourceText);
 xlmMoreButton.addEventListener("click", appendXlmChunk);
 xlmDownloadButton.addEventListener("click", downloadXlmMacros);
 pcodeMoreButton.addEventListener("click", appendPcodeChunk);
