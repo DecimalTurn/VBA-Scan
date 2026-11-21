@@ -311,6 +311,9 @@ h2 { margin: 8px 0 0; font-family: var(--display); font-size: 18px; font-weight:
 .finding-content { min-width: 0; }
 .finding-keyword { overflow-wrap: anywhere; color: var(--ink); font-size: 11px; font-weight: 600; }
 .finding-description { margin-top: 3px; color: var(--text-subtle); font-size: 10px; line-height: 1.5; }
+.finding-match { margin-top: 8px; padding-left: 8px; border-left: 2px solid var(--line-faint); }
+.finding-match > summary { color: var(--text-muted); font-size: 10px; cursor: pointer; }
+.finding-match-content { display: grid; gap: 2px; padding: 6px 0 2px; }
 .no-findings { display: flex; align-items: center; gap: 8px; padding: 14px 0; color: var(--text-muted); font-size: 11px; }
 .no-vba-indicator { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--good); }
 .disclaimer { margin: 15px 0 0; color: var(--text-subtle); font-size: 10px; line-height: 1.5; }

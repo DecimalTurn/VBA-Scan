@@ -874,6 +874,9 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
   const xlmFindings = result.xlm_findings || [];
   const findingSignature = ({ type, keyword }) => `${type}\u0000${keyword.trim().toLowerCase()}`;
   const vbaSourceFindingSignatures = new Set(vbaSourceFindings.map(findingSignature));
+  const vbaSourceFindingsBySignature = new Map(
+    vbaSourceFindings.map((finding) => [findingSignature(finding), finding]),
+  );
   const pcodeFindingSignatures = new Set(pcodeFindings.map(findingSignature));
   const pcodeFindingsAreInVbaSource = [...pcodeFindingSignatures]
     .every((signature) => vbaSourceFindingSignatures.has(signature));
@@ -881,9 +884,9 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
   vbaSourceFindingsGroup.open = true;
   pcodeFindingsGroup.open = !pcodeGroupShouldStartCollapsed;
   pcodeWarningIcon.hidden = !result.stomping && pcodeFindingsAreInVbaSource;
-  const totalFindings = vbaSourceFindings.length + (pcodeGroupShouldStartCollapsed ? 0 : pcodeFindings.length) + xlmFindings.length;
+  const totalFindings = vbaSourceFindings.length + pcodeFindings.length + xlmFindings.length;
   findingCount.textContent = `${totalFindings} ${totalFindings === 1 ? "indicator" : "indicators"}`;
-  const renderFindingGroup = (listElement, countElement, findings, emptyMessage) => {
+  const renderFindingGroup = (listElement, countElement, findings, emptyMessage, matchingFindings = null) => {
     countElement.textContent = `${findings.length}`;
     if (findings.length === 0) {
       const empty = document.createElement("div");
@@ -906,6 +909,27 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
       description.className = "finding-description";
       description.textContent = finding.description.replace(" (option --decode to see all)", "");
       content.append(keyword, description);
+      const matchingFinding = matchingFindings?.get(findingSignature(finding));
+      if (matchingFinding) {
+        const matchDetails = document.createElement("details");
+        matchDetails.className = "finding-match";
+        const matchSummary = document.createElement("summary");
+        matchSummary.textContent = "Likely corresponding VBA indicator";
+        const matchContent = document.createElement("div");
+        matchContent.className = "finding-match-content";
+        const matchType = document.createElement("div");
+        matchType.className = "finding-type";
+        matchType.textContent = matchingFinding.type;
+        const matchKeyword = document.createElement("div");
+        matchKeyword.className = "finding-keyword";
+        matchKeyword.textContent = matchingFinding.keyword;
+        const matchDescription = document.createElement("div");
+        matchDescription.className = "finding-description";
+        matchDescription.textContent = matchingFinding.description.replace(" (option --decode to see all)", "");
+        matchContent.append(matchType, matchKeyword, matchDescription);
+        matchDetails.append(matchSummary, matchContent);
+        content.append(matchDetails);
+      }
       row.append(type, content);
       return row;
       }));
@@ -922,6 +946,7 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
     pcodeFindingCount,
     pcodeFindings,
     result.pcode_size ? "No suspicious indicators found in P-code." : "P-code was not available.",
+    result.stomping === false ? vbaSourceFindingsBySignature : null,
   );
   renderFindingGroup(
     xlmFindingsList,
