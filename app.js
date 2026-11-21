@@ -917,6 +917,9 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
     vbaSourceFindings.map((finding) => [findingSignature(finding), finding]),
   );
   const pcodeFindingSignatures = new Set(pcodeFindings.map(findingSignature));
+  const unmatchedPcodeFindingSignatures = new Set(
+    [...pcodeFindingSignatures].filter((signature) => !vbaSourceFindingSignatures.has(signature)),
+  );
   const pcodeFindingsAreInVbaSource = [...pcodeFindingSignatures]
     .every((signature) => vbaSourceFindingSignatures.has(signature));
   const pcodeGroupShouldStartCollapsed = result.stomping === false && pcodeFindingsAreInVbaSource;
@@ -926,7 +929,14 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
   pcodeMatchNote.hidden = !(result.stomping === false && pcodeFindings.length > 0 && pcodeFindingsAreInVbaSource);
   const totalFindings = vbaSourceFindings.length + pcodeFindings.length + xlmFindings.length;
   findingCount.textContent = `${totalFindings} ${totalFindings === 1 ? "indicator" : "indicators"}`;
-  const renderFindingGroup = (listElement, countElement, findings, emptyMessage, matchingFindings = null) => {
+  const renderFindingGroup = (
+    listElement,
+    countElement,
+    findings,
+    emptyMessage,
+    matchingFindings = null,
+    unmatchedFindingSignatures = null,
+  ) => {
     countElement.textContent = `${findings.length}`;
     if (findings.length === 0) {
       const empty = document.createElement("div");
@@ -949,6 +959,12 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
       description.className = "finding-description";
       description.textContent = finding.description.replace(" (option --decode to see all)", "");
       content.append(keyword, description);
+      if (unmatchedFindingSignatures?.has(findingSignature(finding))) {
+        const unmatched = document.createElement("div");
+        unmatched.className = "pcode-unmatched";
+        unmatched.textContent = "⚠ No matching VBA indicator";
+        content.append(unmatched);
+      }
       const matchingFinding = matchingFindings?.get(findingSignature(finding));
       if (matchingFinding) {
         const matchDetails = document.createElement("details");
@@ -987,6 +1003,7 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
     pcodeFindings,
     result.pcode_size ? "No suspicious indicators found in P-code." : "P-code was not available.",
     result.stomping === false ? vbaSourceFindingsBySignature : null,
+    unmatchedPcodeFindingSignatures,
   );
   renderFindingGroup(
     xlmFindingsList,
