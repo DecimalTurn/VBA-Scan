@@ -57,6 +57,7 @@ def scan_document(path, pcode_path, vba_source_path, vba_archive_path, xlm_path)
         xlm_error = None
         xlm_sources = []
         xlm_findings = []
+        source_module_names = {}
         if has_vba or stomping:
             try:
                 pcode = parser.extract_pcode() or ""
@@ -88,6 +89,7 @@ def scan_document(path, pcode_path, vba_source_path, vba_archive_path, xlm_path)
                             candidate = f"{stem}-{suffix}{extension}"
                             suffix += 1
                         used_names.add(candidate.casefold())
+                        source_module_names[index - 1] = candidate
                         archive.writestr(candidate, vba_code)
                         source_parts.append(f"' ===== {candidate} =====\\n{vba_code}\\n")
                         vba_source_module_count += 1
@@ -133,6 +135,13 @@ def scan_document(path, pcode_path, vba_source_path, vba_archive_path, xlm_path)
           {"type": kind, "keyword": keyword, "description": description}
           for kind, keyword, description in findings_by_source.get("pcode", [])
         ]
+        vba_source_locations = []
+        for location in findings_by_source.get("vba_source_locations", []):
+            mapped_location = dict(location)
+            mapped_location["module_name"] = source_module_names.get(
+                location["module_index"], location["module_name"]
+            )
+            vba_source_locations.append(mapped_location)
         return json.dumps({
             "has_vba": has_vba,
             "has_xlm": has_xlm,
@@ -150,6 +159,7 @@ def scan_document(path, pcode_path, vba_source_path, vba_archive_path, xlm_path)
             "xlm_macro_count": len(xlm_sources),
             "project_codepages": get_project_codepages(parser),
             "vba_source_findings": vba_source_findings,
+            "vba_source_locations": vba_source_locations,
             "pcode_findings": pcode_findings,
             "xlm_findings": xlm_findings,
         })

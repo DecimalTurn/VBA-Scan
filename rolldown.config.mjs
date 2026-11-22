@@ -1,6 +1,6 @@
 export default {
   input: {
-    app: "./app.js",
+    app: "./app.ts",
     "analysis-worker": "./analysis-worker.ts",
   },
   output: {

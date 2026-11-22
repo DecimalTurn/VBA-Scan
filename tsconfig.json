@@ -8,9 +8,9 @@
     "rootDir": ".",
     "outDir": "site",
     "skipLibCheck": true,
-    "lib": ["ES2022", "WebWorker"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
     "rewriteRelativeImportExtensions": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["analysis-worker.ts", "analysis-python.ts"]
+  "include": ["app.ts", "analysis-worker.ts", "analysis-python.ts"]
 }

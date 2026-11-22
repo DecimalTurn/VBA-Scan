@@ -15,84 +15,170 @@ const XLM_LARGE_DOWNLOAD_WARNING_BYTES = 10 * 1024 * 1024;
 const DEBUG_LOG_KEY = "vba-scan-debug-events";
 const debugMode = new URLSearchParams(window.location.search).get("debug") === "1";
 
-const fileInput = document.querySelector("#file-input");
-const dropZone = document.querySelector("#drop-zone");
-const browseButton = document.querySelector("#browse-button");
-const selectedFileElement = document.querySelector("#selected-file");
-const fileNameElement = document.querySelector("#file-name");
-const fileSizeElement = document.querySelector("#file-size");
-const removeFileButton = document.querySelector("#remove-file");
-const runtimeNote = document.querySelector("#runtime-note");
-const runtimeNoteContainer = runtimeNote.closest(".runtime-note");
-const runtimeIndicator = document.querySelector(".runtime-dot");
-const statusMessage = document.querySelector("#status-message");
-const statusText = document.querySelector("#status-text");
-const analysisSpinner = document.querySelector("#analysis-spinner");
-const analysisProgress = document.querySelector("#analysis-progress");
-const debugLogButton = document.querySelector("#download-debug-log");
-const resultsElement = document.querySelector("#results");
-const resultSummary = document.querySelector("#result-summary");
-const extractedSourceSection = document.querySelector("#extracted-source-section");
-const openVbaSourceButton = document.querySelector("#open-vba-source");
-const openXlmSourceButton = document.querySelector("#open-xlm-source");
-const openPcodeSourceButton = document.querySelector("#open-pcode-source");
-const sourceCodeDialog = document.querySelector("#source-code-dialog");
-const sourceDialogTitle = document.querySelector("#source-dialog-title");
-const sourceDialogCloseButton = document.querySelector("#source-dialog-close");
-const vbaSourceSection = document.querySelector("#vba-source-section");
-const vbaSourcePreview = document.querySelector("#vba-source-preview");
-const vbaSourceMatchLocation = document.querySelector("#vba-source-match-location");
-const vbaSourceOutput = document.querySelector("#vba-source-output");
-const vbaSourceControls = document.querySelector("#vba-source-controls");
-const vbaSourceProgress = document.querySelector("#vba-source-progress");
-const vbaSourceMoreButton = document.querySelector("#vba-source-more");
-const vbaSourceLoadAboveButton = document.querySelector("#vba-source-load-above");
-const vbaSourceLoadBelowButton = document.querySelector("#vba-source-load-below");
-const vbaSourceDownloadButton = document.querySelector("#vba-source-download");
-const vbaSourceTextDownloadButton = document.querySelector("#vba-source-text-download");
-const vbaSourceLargeDownloadWarning = document.querySelector("#vba-source-large-download-warning");
-const xlmFindingsGroup = document.querySelector("#xlm-findings-group");
-const xlmFindingsList = document.querySelector("#xlm-findings-list");
-const xlmFindingCount = document.querySelector("#xlm-finding-count");
-const xlmSection = document.querySelector("#xlm-section");
-const xlmOutput = document.querySelector("#xlm-output");
-const xlmControls = document.querySelector("#xlm-controls");
-const xlmProgress = document.querySelector("#xlm-progress");
-const xlmMoreButton = document.querySelector("#xlm-more");
-const xlmDownloadButton = document.querySelector("#xlm-download");
-const xlmLargeDownloadWarning = document.querySelector("#xlm-large-download-warning");
-const pcodeSection = document.querySelector("#pcode-section");
-const pcodeOutput = document.querySelector("#pcode-output");
-const pcodeControls = document.querySelector("#pcode-controls");
-const pcodeProgress = document.querySelector("#pcode-progress");
-const pcodeMoreButton = document.querySelector("#pcode-more");
-const pcodeDownloadButton = document.querySelector("#pcode-download");
-const pcodeLargeDownloadWarning = document.querySelector("#pcode-large-download-warning");
-const vbaSourceFindingsList = document.querySelector("#vba-source-findings-list");
-const vbaSourceFindingCount = document.querySelector("#vba-source-finding-count");
-const vbaSourceFindingsGroup = document.querySelector('[aria-labelledby="vba-source-findings-heading"]');
-const vbaSourceWarningIcon = document.querySelector("#vba-source-warning-icon");
-const xlmWarningIcon = document.querySelector("#xlm-warning-icon");
-const pcodeFindingsGroup = document.querySelector("#pcode-findings-group");
-const pcodeWarningIcon = document.querySelector("#pcode-warning-icon");
-const pcodeMatchNote = document.querySelector("#pcode-match-note");
-const pcodeFindingsList = document.querySelector("#pcode-findings-list");
-const pcodeFindingCount = document.querySelector("#pcode-finding-count");
-const findingCount = document.querySelector("#finding-count");
-const analysisTime = document.querySelector("#analysis-time");
-const documentHash = document.querySelector("#document-hash");
-const documentFilename = document.querySelector("#document-filename");
-const documentCodepage = document.querySelector("#document-codepage");
-const copyHashButton = document.querySelector("#copy-hash-button");
-const copyStatus = document.querySelector("#copy-status");
+type EngineState = "loading" | "ready" | "error";
 
-let selectedFile = null;
+interface Finding {
+  type: string;
+  keyword: string;
+  description: string;
+}
+
+interface VbaSourceLocation extends Finding {
+  module_name: string;
+  line_number: number;
+}
+
+interface SourceLine {
+  number: number | null | undefined;
+  text: string;
+  matched: boolean;
+  byteOffset: number;
+  endByteOffset: number;
+}
+
+interface VbaSourceContext {
+  moduleName: string;
+  lineNumber: number;
+  lines: SourceLine[];
+  startByteOffset: number;
+  endByteOffset: number;
+}
+
+interface PcodeSourceContext {
+  number: number;
+  text: string;
+  module_stream: string | null;
+}
+
+interface PcodeBlock {
+  matched: boolean;
+  context: PcodeSourceContext;
+}
+
+interface FindingGroupOptions {
+  matchingFindings?: Map<string, Finding> | null;
+  unmatchedFindingSignatures?: Set<string> | null;
+  sourceContextType?: "pcode" | "vba" | null;
+}
+
+interface SummaryCard {
+  label: string;
+  value: string;
+  tone: string;
+  note?: { text: string; issues: number[] };
+  mismatches?: Array<{ kind: string; value: string }>;
+}
+
+interface ScanResult {
+  has_vba: boolean;
+  has_xlm: boolean;
+  stomping: boolean | null;
+  stomping_items: Array<{ kind: string; value: string }>;
+  pcode_size: number;
+  pcode_error: string | null;
+  vba_source_size: number;
+  vba_source_archive_size: number;
+  vba_source_module_count: number;
+  vba_source_error: string | null;
+  xlm_size: number;
+  xlm_error: string | null;
+  xlm_macro_count: number;
+  project_codepages: Array<{ value: number; name: string | null }>;
+  vba_source_findings: Finding[];
+  vba_source_locations: VbaSourceLocation[];
+  pcode_findings: Finding[];
+  xlm_findings: Finding[];
+}
+
+interface ScanWorkerResult {
+  result: string;
+  paths: { pcode: string; vbaSource: string; vbaArchive: string; xlm: string };
+}
+
+function requireElement<T extends HTMLElement = HTMLElement>(selector: string): T {
+  const element = document.querySelector<T>(selector);
+  if (!element) throw new Error(`Required page element is missing: ${selector}`);
+  return element;
+}
+
+const fileInput = requireElement<HTMLInputElement>("#file-input");
+const dropZone = requireElement("#drop-zone");
+const browseButton = requireElement<HTMLButtonElement>("#browse-button");
+const selectedFileElement = requireElement("#selected-file");
+const fileNameElement = requireElement("#file-name");
+const fileSizeElement = requireElement("#file-size");
+const removeFileButton = requireElement<HTMLButtonElement>("#remove-file");
+const runtimeNote = requireElement("#runtime-note");
+const runtimeNoteContainer = requireElement(".runtime-note");
+const runtimeIndicator = requireElement(".runtime-dot");
+const statusMessage = requireElement("#status-message");
+const statusText = requireElement("#status-text");
+const analysisSpinner = requireElement("#analysis-spinner");
+const analysisProgress = requireElement("#analysis-progress");
+const debugLogButton = requireElement<HTMLButtonElement>("#download-debug-log");
+const resultsElement = requireElement("#results");
+const resultSummary = requireElement("#result-summary");
+const extractedSourceSection = requireElement("#extracted-source-section");
+const openVbaSourceButton = requireElement<HTMLButtonElement>("#open-vba-source");
+const openXlmSourceButton = requireElement<HTMLButtonElement>("#open-xlm-source");
+const openPcodeSourceButton = requireElement<HTMLButtonElement>("#open-pcode-source");
+const sourceCodeDialog = requireElement<HTMLDialogElement>("#source-code-dialog");
+const sourceDialogTitle = requireElement("#source-dialog-title");
+const sourceDialogCloseButton = requireElement<HTMLButtonElement>("#source-dialog-close");
+const vbaSourceSection = requireElement("#vba-source-section");
+const vbaSourcePreview = requireElement("#vba-source-preview");
+const vbaSourceMatchLocation = requireElement("#vba-source-match-location");
+const vbaSourceOutput = requireElement("#vba-source-output");
+const vbaSourceControls = requireElement("#vba-source-controls");
+const vbaSourceProgress = requireElement("#vba-source-progress");
+const vbaSourceMoreButton = requireElement<HTMLButtonElement>("#vba-source-more");
+const vbaSourceLoadAboveButton = requireElement<HTMLButtonElement>("#vba-source-load-above");
+const vbaSourceLoadBelowButton = requireElement<HTMLButtonElement>("#vba-source-load-below");
+const vbaSourceDownloadButton = requireElement<HTMLButtonElement>("#vba-source-download");
+const vbaSourceTextDownloadButton = requireElement<HTMLButtonElement>("#vba-source-text-download");
+const vbaSourceLargeDownloadWarning = requireElement("#vba-source-large-download-warning");
+const xlmFindingsGroup = requireElement<HTMLDetailsElement>("#xlm-findings-group");
+const xlmFindingsList = requireElement("#xlm-findings-list");
+const xlmFindingCount = requireElement("#xlm-finding-count");
+const xlmSection = requireElement("#xlm-section");
+const xlmOutput = requireElement("#xlm-output");
+const xlmControls = requireElement("#xlm-controls");
+const xlmProgress = requireElement("#xlm-progress");
+const xlmMoreButton = requireElement<HTMLButtonElement>("#xlm-more");
+const xlmDownloadButton = requireElement<HTMLButtonElement>("#xlm-download");
+const xlmLargeDownloadWarning = requireElement("#xlm-large-download-warning");
+const pcodeSection = requireElement("#pcode-section");
+const pcodeOutput = requireElement("#pcode-output");
+const pcodeControls = requireElement("#pcode-controls");
+const pcodeProgress = requireElement("#pcode-progress");
+const pcodeMoreButton = requireElement<HTMLButtonElement>("#pcode-more");
+const pcodeDownloadButton = requireElement<HTMLButtonElement>("#pcode-download");
+const pcodeLargeDownloadWarning = requireElement("#pcode-large-download-warning");
+const vbaSourceFindingsList = requireElement("#vba-source-findings-list");
+const vbaSourceFindingCount = requireElement("#vba-source-finding-count");
+const vbaSourceFindingsGroup = requireElement<HTMLDetailsElement>('[aria-labelledby="vba-source-findings-heading"]');
+const vbaSourceWarningIcon = requireElement("#vba-source-warning-icon");
+const xlmWarningIcon = requireElement("#xlm-warning-icon");
+const pcodeFindingsGroup = requireElement<HTMLDetailsElement>("#pcode-findings-group");
+const pcodeWarningIcon = requireElement("#pcode-warning-icon");
+const pcodeMatchNote = requireElement("#pcode-match-note");
+const pcodeFindingsList = requireElement("#pcode-findings-list");
+const pcodeFindingCount = requireElement("#pcode-finding-count");
+const findingCount = requireElement("#finding-count");
+const analysisTime = requireElement("#analysis-time");
+const documentHash = requireElement("#document-hash");
+const documentFilename = requireElement("#document-filename");
+const documentCodepage = requireElement("#document-codepage");
+const copyHashButton = requireElement<HTMLButtonElement>("#copy-hash-button");
+const copyStatus = requireElement("#copy-status");
+
+let selectedFile: File | null = null;
 const analysisWorker = new Worker(new URL("./analysis-worker.js", import.meta.url), { type: "module" });
-const workerRequests = new Map();
+const workerRequests = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
 let workerRequestSequence = 0;
 let scanning = false;
-let engineState = "loading";
-let copyFeedbackTimeout = null;
+let engineState: EngineState = "loading";
+let copyFeedbackTimeout: ReturnType<typeof setTimeout> | null = null;
 let vbaSourceOffset = 0;
 let vbaSourcePath = "";
 let vbaSourceSize = 0;
@@ -102,7 +188,7 @@ let vbaSourceArchiveSize = 0;
 let vbaSourceLoading = false;
 let vbaSourceDownloadInProgress = false;
 let vbaSourceDecoder = new TextDecoder("utf-8");
-let vbaSourceMatchContext = null;
+let vbaSourceMatchContext: VbaSourceContext | null = null;
 let vbaSourceWindowReadOffset = 0;
 let vbaSourceWindowPendingBytes = new Uint8Array();
 let vbaSourceWindowLoading = false;
@@ -119,9 +205,9 @@ let pcodeSize = 0;
 let pcodeLoading = false;
 let pcodeDownloadInProgress = false;
 let pcodeDecoder = new TextDecoder("utf-8");
-const pcodeSourceContextCache = new Map();
-const vbaSourceContextCache = new Map();
-const debugEvents = [];
+const pcodeSourceContextCache = new Map<string, Promise<PcodeSourceContext | null>>();
+const vbaSourceContextCache = new Map<string, Promise<VbaSourceContext | null>>();
+const debugEvents: Array<Record<string, unknown>> = [];
 if (debugMode) {
   try {
     const savedEvents = JSON.parse(localStorage.getItem(DEBUG_LOG_KEY) || "[]");
@@ -131,7 +217,7 @@ if (debugMode) {
 
 debugLogButton.hidden = !debugMode;
 
-function setEngineState(state) {
+function setEngineState(state: EngineState) {
   engineState = state;
   runtimeIndicator.dataset.state = state;
 }
@@ -145,18 +231,23 @@ const macroFreeOfficeExtensions = new Set([
   "xlsx", "xltx", "docx", "dotx", "pptx", "potx", "ppsx",
 ]);
 
-function logDebug(event, details = {}) {
+function logDebug(event: string, details: Record<string, unknown> = {}) {
   if (!debugMode) return;
   debugEvents.push({ timestamp: new Date().toISOString(), elapsed_ms: Math.round(performance.now()), event, ...details });
   if (debugEvents.length > 500) debugEvents.shift();
   try { localStorage.setItem(DEBUG_LOG_KEY, JSON.stringify(debugEvents)); } catch {}
 }
 
-function getErrorDetails(error) {
+function getErrorDetails(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
   return {
-    name: error?.name || "Error",
-    message: String(error?.message || error).replace(selectedFile?.name || "\0", "[selected file]"),
+    name: error instanceof Error ? error.name : "Error",
+    message: message.replace(selectedFile?.name || "\0", "[selected file]"),
   };
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 window.addEventListener("error", (event) => {
@@ -186,15 +277,15 @@ function setStatus(message = "", isError = false) {
   statusMessage.classList.toggle("error", isError);
 }
 
-function requestWorker(type, payload = {}, transfer = []) {
+function requestWorker<T = unknown>(type: string, payload: Record<string, unknown> = {}, transfer: Transferable[] = []): Promise<T> {
   const requestId = ++workerRequestSequence;
-  return new Promise((resolve, reject) => {
-    workerRequests.set(requestId, { resolve, reject });
+  return new Promise<T>((resolve, reject) => {
+    workerRequests.set(requestId, { resolve: (value) => resolve(value as T), reject });
     try {
       analysisWorker.postMessage({ type, requestId, ...payload }, transfer);
     } catch (error) {
       workerRequests.delete(requestId);
-      reject(error);
+      reject(error instanceof Error ? error : new Error(String(error)));
     }
   });
 }
@@ -228,25 +319,26 @@ analysisWorker.addEventListener("error", (event) => {
   setEngineState("error");
   if (scanning) {
     setBusy(false);
-    setStatus(`Analysis could not be completed: ${error.message}`, true);
+    setStatus(`Analysis could not be completed: ${getErrorMessage(error)}`, true);
   } else {
-    setStatus(`Analysis engine could not be loaded: ${error.message}`, true);
+    setStatus(`Analysis engine could not be loaded: ${getErrorMessage(error)}`, true);
   }
 });
 
-function logDuration(label, startedAt) {
+function logDuration(label: string, startedAt: number) {
   const duration = Number((performance.now() - startedAt).toFixed(1));
   console.info(`[VBA Scan] ${label}: ${duration} ms`);
   logDebug("timing", { label, duration_ms: duration });
 }
 
-async function readPcodeBytes(offset, size) {
+async function readPcodeBytes(offset: number, size: number): Promise<Uint8Array> {
   return readTemporaryFileBytes(pcodePath, offset, size);
 }
 
-async function findPcodeSourceContext(keyword) {
+async function findPcodeSourceContext(keyword: string): Promise<PcodeSourceContext | null> {
   const cacheKey = keyword.trim().toLowerCase();
-  if (pcodeSourceContextCache.has(cacheKey)) return pcodeSourceContextCache.get(cacheKey);
+  const cached = pcodeSourceContextCache.get(cacheKey);
+  if (cached) return cached;
 
   const search = (async () => {
     const pattern = new RegExp(keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
@@ -254,9 +346,9 @@ async function findPcodeSourceContext(keyword) {
     let offset = 0;
     let pendingLine = "";
     let inModuleStreams = false;
-    let moduleStream = null;
-    let block = null;
-    const processLine = (line) => {
+    let moduleStream: string | null = null;
+    let block: PcodeBlock | null = null;
+    const processLine = (line: string): PcodeSourceContext | null => {
       const trimmedLine = line.trim();
       if (trimmedLine === "Module streams:") {
         inModuleStreams = true;
@@ -265,7 +357,7 @@ async function findPcodeSourceContext(keyword) {
       const moduleStreamMatch = inModuleStreams && trimmedLine.match(/^(.+ - \d+ bytes)$/);
       if (moduleStreamMatch) {
         if (block?.matched) return block.context;
-        moduleStream = moduleStreamMatch[1];
+        moduleStream = moduleStreamMatch[1] ?? "";
         block = null;
         return null;
       }
@@ -291,7 +383,7 @@ async function findPcodeSourceContext(keyword) {
       offset += bytes.length;
       pendingLine += decoder.decode(bytes, { stream: offset < pcodeSize });
       const lines = pendingLine.split("\n");
-      pendingLine = lines.pop();
+      pendingLine = lines.pop() ?? "";
       for (const line of lines) {
         const context = processLine(line);
         if (context) return context;
@@ -301,7 +393,8 @@ async function findPcodeSourceContext(keyword) {
       const context = processLine(pendingLine);
       if (context) return context;
     }
-    return block?.matched ? block.context : null;
+    const finalBlock = block as PcodeBlock | null;
+    return finalBlock?.matched ? finalBlock.context : null;
   })();
 
   pcodeSourceContextCache.set(cacheKey, search);
@@ -313,12 +406,13 @@ async function findPcodeSourceContext(keyword) {
   }
 }
 
-async function findVbaSourceContext(keyword) {
-  const searchTerm = keyword.trim().toLowerCase();
-  if (!searchTerm || !vbaSourceSize) return null;
-  if (vbaSourceContextCache.has(searchTerm)) return vbaSourceContextCache.get(searchTerm);
+async function findVbaSourceContext(location: VbaSourceLocation): Promise<VbaSourceContext | null> {
+  if (!vbaSourceSize) return null;
+  const cacheKey = `${location.module_name}\u0000${location.line_number}`;
+  const cached = vbaSourceContextCache.get(cacheKey);
+  if (cached) return cached;
 
-  const search = (async () => {
+  const search = (async (): Promise<VbaSourceContext | null> => {
     const decoder = new TextDecoder("utf-8");
     const encoder = new TextEncoder();
     let offset = 0;
@@ -326,32 +420,34 @@ async function findVbaSourceContext(keyword) {
     let pendingLine = "";
     let moduleName = "";
     let moduleLineNumber = 0;
-    let precedingLines = [];
-    let matchedLine = null;
-    let contextLines = [];
+    let isTargetModule = false;
+    let precedingLines: SourceLine[] = [];
+    let matchedLine: SourceLine | null = null;
+    let contextLines: SourceLine[] = [];
     let followingLinesRemaining = 2;
-    const getContext = () => ({
+    const getContext = (matched: SourceLine): VbaSourceContext => ({
       moduleName,
-      lineNumber: matchedLine.number,
+      lineNumber: matched.number!,
       lines: contextLines,
       startByteOffset: contextLines[0].byteOffset,
-      endByteOffset: contextLines.at(-1).endByteOffset,
+      endByteOffset: contextLines.at(-1)!.endByteOffset,
     });
-    const processLine = (line, newlineBytes) => {
+    const processLine = (line: string, newlineBytes: number): VbaSourceContext | null => {
       const byteOffset = scannedOffset;
       scannedOffset += encoder.encode(line).length + newlineBytes;
       const sourceText = line.replace(/\r$/, "");
       const moduleHeader = sourceText.match(/^' ===== (.+) =====$/);
       if (moduleHeader) {
-        if (matchedLine) return getContext();
-        moduleName = moduleHeader[1];
+        if (matchedLine) return getContext(matchedLine);
+        moduleName = moduleHeader[1] ?? "";
         moduleLineNumber = 0;
+        isTargetModule = moduleName === location.module_name;
         precedingLines = [];
         return null;
       }
-      if (!moduleName) return null;
+      if (!isTargetModule) return null;
 
-      const sourceLine = {
+      const sourceLine: SourceLine = {
         number: ++moduleLineNumber,
         text: sourceText,
         matched: false,
@@ -361,9 +457,9 @@ async function findVbaSourceContext(keyword) {
       if (matchedLine) {
         contextLines.push(sourceLine);
         followingLinesRemaining -= 1;
-        return followingLinesRemaining === 0 ? getContext() : null;
+        return followingLinesRemaining === 0 ? getContext(matchedLine) : null;
       }
-      if (line.toLowerCase().includes(searchTerm)) {
+      if (sourceLine.number === location.line_number) {
         sourceLine.matched = true;
         matchedLine = sourceLine;
         contextLines = [...precedingLines, sourceLine];
@@ -384,7 +480,7 @@ async function findVbaSourceContext(keyword) {
       offset += bytes.length;
       pendingLine += decoder.decode(bytes, { stream: offset < vbaSourceSize });
       const lines = pendingLine.split("\n");
-      pendingLine = lines.pop();
+      pendingLine = lines.pop() ?? "";
       for (const line of lines) {
         const context = processLine(line, 1);
         if (context) return context;
@@ -394,19 +490,19 @@ async function findVbaSourceContext(keyword) {
       const context = processLine(pendingLine, 0);
       if (context) return context;
     }
-    return matchedLine ? getContext() : null;
+    return matchedLine ? getContext(matchedLine) : null;
   })();
 
-  vbaSourceContextCache.set(searchTerm, search);
+  vbaSourceContextCache.set(cacheKey, search);
   try {
     return await search;
   } catch (error) {
-    vbaSourceContextCache.delete(searchTerm);
+    vbaSourceContextCache.delete(cacheKey);
     throw error;
   }
 }
 
-function renderVbaSourceContext(container, context) {
+function renderVbaSourceContext(container: HTMLElement, context: VbaSourceContext) {
   const module = document.createElement("div");
   module.className = "vba-source-context-module";
   module.textContent = `${context.moduleName} · line ${context.lineNumber}`;
@@ -422,7 +518,7 @@ function renderVbaSourceContext(container, context) {
   container.replaceChildren(module, code);
 }
 
-function renderVbaSourceWindow(context) {
+function renderVbaSourceWindow(context: VbaSourceContext) {
   const nodes = [];
   for (const line of context.lines) {
     const sourceLine = document.createElement("span");
@@ -440,6 +536,7 @@ async function loadMoreVbaSourceAbove() {
   vbaSourceLoadAboveButton.disabled = true;
   vbaSourceLoadBelowButton.disabled = true;
   const pre = vbaSourceOutput.parentElement;
+  if (!pre) return;
   const previousHeight = pre.scrollHeight;
   try {
     const endOffset = context.startByteOffset;
@@ -547,7 +644,7 @@ async function loadMoreVbaSourceBelow() {
   }
 }
 
-function openVbaSourceMatch(context) {
+function openVbaSourceMatch(context: VbaSourceContext) {
   for (const section of [vbaSourceSection, xlmSection, pcodeSection]) {
     section.hidden = section !== vbaSourceSection;
   }
@@ -570,7 +667,7 @@ function openVbaSourceMatch(context) {
   sourceCodeDialog.showModal();
 }
 
-function createVbaSourceDetails(keyword) {
+function createVbaSourceDetails(location: VbaSourceLocation) {
   const details = document.createElement("details");
   details.className = "vba-source-lines";
   const summary = document.createElement("summary");
@@ -584,7 +681,7 @@ function createVbaSourceDetails(keyword) {
     if (!details.open || loading || loaded) return;
     loading = true;
     content.textContent = "Searching extracted VBA source…";
-    void findVbaSourceContext(keyword).then((context) => {
+    void findVbaSourceContext(location).then((context) => {
       content.replaceChildren();
       if (!context) {
         summary.textContent = "VBA source line (no direct match)";
@@ -611,8 +708,8 @@ function createVbaSourceDetails(keyword) {
   return details;
 }
 
-async function readTemporaryFileBytes(path, offset, size) {
-  return requestWorker("read-file", { path, offset, size });
+async function readTemporaryFileBytes(path: string, offset: number, size: number): Promise<Uint8Array> {
+  return requestWorker<Uint8Array>("read-file", { path, offset, size });
 }
 
 async function appendVbaSourceChunk() {
@@ -636,7 +733,7 @@ async function appendVbaSourceChunk() {
     logDebug("vba_source_preview_chunk", { bytes: bytes.length, total_bytes: vbaSourceSize });
   } catch (error) {
     logDebug("vba_source_preview_error", getErrorDetails(error));
-    setStatus(`Could not load VBA source preview: ${error.message}`, true);
+    setStatus(`Could not load VBA source preview: ${getErrorMessage(error)}`, true);
   } finally {
     vbaSourceMoreButton.disabled = false;
     logDuration("VBA source preview chunk", startedAt);
@@ -666,7 +763,7 @@ async function appendPcodeChunk() {
     logDebug("pcode_preview_chunk", { bytes: bytes.length, total_bytes: pcodeSize });
   } catch (error) {
     logDebug("pcode_preview_error", getErrorDetails(error));
-    setStatus(`Could not load p-code preview: ${error.message}`, true);
+    setStatus(`Could not load p-code preview: ${getErrorMessage(error)}`, true);
   } finally {
     pcodeMoreButton.disabled = false;
     logDuration("P-code preview chunk", startedAt);
@@ -686,14 +783,14 @@ async function appendXlmChunk() {
     xlmMoreButton.hidden = xlmOffset >= Math.min(xlmSize, XLM_PREVIEW_LIMIT);
   } catch (error) {
     logDebug("xlm_preview_error", getErrorDetails(error));
-    setStatus(`Could not load XLM macro preview: ${error.message}`, true);
+    setStatus(`Could not load XLM macro preview: ${getErrorMessage(error)}`, true);
   } finally {
     xlmMoreButton.disabled = false;
     xlmLoading = false;
   }
 }
 
-function openSourcePreview(sourceType) {
+function openSourcePreview(sourceType: "vba" | "xlm" | "pcode") {
   const sources = {
     vba: { section: vbaSourceSection, title: "VBA source code", size: vbaSourceSize, offset: vbaSourceOffset },
     xlm: { section: xlmSection, title: "XLM formula source", size: xlmSize, offset: xlmOffset },
@@ -750,8 +847,8 @@ function downloadDebugLog() {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function setSelectedFile(file) {
-  const extension = file.name.split(".").pop().toLowerCase();
+function setSelectedFile(file: File) {
+  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
   if (macroFreeOfficeExtensions.has(extension)) {
     setStatus(`.${extension} files cannot contain embedded VBA macros. Choose a macro-enabled format such as .xlsm, .docm, or .pptm.`, true);
     return;
@@ -801,13 +898,13 @@ function clearSelectedFile() {
   setStatus();
 }
 
-function formatFileSize(bytes) {
+function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function getPcodeFilename(fileName) {
+function getPcodeFilename(fileName: string) {
   const extensionSeparator = fileName.lastIndexOf(".");
   if (extensionSeparator <= 0 || extensionSeparator === fileName.length - 1) {
     return `${fileName}-pcode.txt`;
@@ -815,25 +912,32 @@ function getPcodeFilename(fileName) {
   return `${fileName.slice(0, extensionSeparator)}-${fileName.slice(extensionSeparator + 1)}-pcode.txt`;
 }
 
-function getVbaSourceArchiveFilename(fileName) {
+function getVbaSourceArchiveFilename(fileName: string) {
   const extensionSeparator = fileName.lastIndexOf(".");
   const stem = extensionSeparator > 0 ? fileName.slice(0, extensionSeparator) : fileName;
   return `${stem}-vba-source.zip`;
 }
 
-function getVbaSourceTextFilename(fileName) {
+function getVbaSourceTextFilename(fileName: string) {
   const extensionSeparator = fileName.lastIndexOf(".");
   const stem = extensionSeparator > 0 ? fileName.slice(0, extensionSeparator) : fileName;
   return `${stem}-vba-source.txt`;
 }
 
-function getXlmFilename(fileName) {
+function getXlmFilename(fileName: string) {
   const extensionSeparator = fileName.lastIndexOf(".");
   const stem = extensionSeparator > 0 ? fileName.slice(0, extensionSeparator) : fileName;
   return `${stem}-xlm-macros.txt`;
 }
 
-async function downloadVbaSource(path, size, filename, mimeType, label, eventPrefix) {
+async function downloadVbaSource(
+  path: string,
+  size: number,
+  filename: string,
+  mimeType: string,
+  label: string,
+  eventPrefix: string,
+): Promise<void> {
   if (vbaSourceDownloadInProgress || !size || !selectedFile) return;
   vbaSourceDownloadInProgress = true;
   vbaSourceDownloadButton.disabled = true;
@@ -857,7 +961,7 @@ async function downloadVbaSource(path, size, filename, mimeType, label, eventPre
         logDebug(`${eventPrefix}_progress`, { bytes: written, total_bytes: size });
       }
     }
-    const blob = new Blob(chunks, { type: mimeType });
+    const blob = new Blob(chunks.map((chunk) => chunk.slice().buffer as ArrayBuffer), { type: mimeType });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -869,7 +973,7 @@ async function downloadVbaSource(path, size, filename, mimeType, label, eventPre
   } catch (error) {
     logDebug(`${eventPrefix}_error`, getErrorDetails(error));
     vbaSourceProgress.textContent = "Download did not complete";
-    setStatus(`Could not download VBA source: ${error.message}`, true);
+    setStatus(`Could not download VBA source: ${getErrorMessage(error)}`, true);
   } finally {
     vbaSourceDownloadButton.disabled = false;
     vbaSourceTextDownloadButton.disabled = false;
@@ -919,7 +1023,7 @@ async function downloadXlmMacros() {
       written += bytes.length;
       xlmProgress.textContent = `Downloading ${written.toLocaleString()} of ${xlmSize.toLocaleString()} bytes`;
     }
-    const blob = new Blob(chunks, { type: "text/plain;charset=utf-8" });
+    const blob = new Blob(chunks.map((chunk) => chunk.slice().buffer as ArrayBuffer), { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -930,7 +1034,7 @@ async function downloadXlmMacros() {
   } catch (error) {
     logDebug("xlm_download_error", getErrorDetails(error));
     xlmProgress.textContent = "Download did not complete";
-    setStatus(`Could not download XLM macros: ${error.message}`, true);
+    setStatus(`Could not download XLM macros: ${getErrorMessage(error)}`, true);
   } finally {
     xlmDownloadButton.disabled = false;
     removeFileButton.disabled = false;
@@ -938,7 +1042,7 @@ async function downloadXlmMacros() {
   }
 }
 
-function setBusy(isBusy, message = "") {
+function setBusy(isBusy: boolean, message = "") {
   scanning = isBusy;
   if (!isBusy) {
     analysisSpinner.hidden = true;
@@ -953,7 +1057,7 @@ function setBusy(isBusy, message = "") {
   }[engineState];
 }
 
-function renderResults(result, elapsedMilliseconds, sha256, fileName) {
+function renderResults(result: ScanResult, elapsedMilliseconds: number, sha256: string, fileName: string) {
   documentHash.textContent = sha256;
   documentFilename.textContent = fileName;
   const projectCodepages = result.project_codepages || [];
@@ -1159,7 +1263,10 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
   const xlmFindings = result.xlm_findings || [];
   vbaSourceWarningIcon.hidden = vbaSourceFindings.length === 0;
   xlmWarningIcon.hidden = xlmFindings.length === 0;
-  const findingSignature = ({ type, keyword }) => `${type}\u0000${keyword.trim().toLowerCase()}`;
+  const findingSignature = ({ type, keyword }: Finding) => `${type}\u0000${keyword.trim().toLowerCase()}`;
+  const vbaSourceLocationsBySignature = new Map(
+    result.vba_source_locations.map((location) => [findingSignature(location), location]),
+  );
   const vbaSourceFindingSignatures = new Set(vbaSourceFindings.map(findingSignature));
   const vbaSourceFindingsBySignature = new Map(
     vbaSourceFindings.map((finding) => [findingSignature(finding), finding]),
@@ -1178,11 +1285,11 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
   const totalFindings = vbaSourceFindings.length + pcodeFindings.length + xlmFindings.length;
   findingCount.textContent = `${totalFindings} ${totalFindings === 1 ? "indicator" : "indicators"}`;
   const renderFindingGroup = (
-    listElement,
-    countElement,
-    findings,
-    emptyMessage,
-    options = {},
+    listElement: HTMLElement,
+    countElement: HTMLElement,
+    findings: Finding[],
+    emptyMessage: string,
+    options: FindingGroupOptions = {},
   ) => {
     const {
       matchingFindings = null,
@@ -1256,7 +1363,8 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
         content.append(sourceDetails);
       }
       if (sourceContextType === "vba") {
-        content.append(createVbaSourceDetails(finding.keyword));
+        const location = vbaSourceLocationsBySignature.get(findingSignature(finding));
+        if (location) content.append(createVbaSourceDetails(location));
       }
       const matchingFinding = matchingFindings?.get(findingSignature(finding));
       if (matchingFinding) {
@@ -1341,7 +1449,7 @@ async function analyzeSelectedFile() {
     logDebug("analysis_started", { input_bytes: fileBytes.byteLength });
     setStatus("Preparing Python and oletools for local analysis…");
     const scanStartedAt = performance.now();
-    const scan = await requestWorker("scan", { fileBytes, fileName: file.name }, [fileBytes]);
+    const scan = await requestWorker<ScanWorkerResult>("scan", { fileBytes, fileName: file.name }, [fileBytes]);
     logDuration("Document analysis", scanStartedAt);
     pcodePath = scan.paths.pcode;
     vbaSourcePath = scan.paths.vbaSource;
@@ -1352,7 +1460,7 @@ async function analyzeSelectedFile() {
     setStatus("✅ Analysis complete.");
   } catch (error) {
     logDebug("analysis_error", getErrorDetails(error));
-    setStatus(`Analysis could not be completed: ${error.message}`, true);
+    setStatus(`Analysis could not be completed: ${getErrorMessage(error)}`, true);
   } finally {
     setBusy(false);
   }
@@ -1360,7 +1468,7 @@ async function analyzeSelectedFile() {
 
 browseButton.addEventListener("click", () => fileInput.click());
 dropZone.addEventListener("click", (event) => {
-  if (event.target.closest("button")) return;
+  if (event.target instanceof Element && event.target.closest("button")) return;
   fileInput.click();
 });
 fileInput.addEventListener("change", () => {
@@ -1410,7 +1518,7 @@ pcodeDownloadButton.addEventListener("click", async () => {
         logDebug("pcode_download_progress", { bytes: written, total_bytes: pcodeSize });
       }
     }
-    const blob = new Blob(chunks, { type: "text/plain;charset=utf-8" });
+    const blob = new Blob(chunks.map((chunk) => chunk.slice().buffer as ArrayBuffer), { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -1422,7 +1530,7 @@ pcodeDownloadButton.addEventListener("click", async () => {
   } catch (error) {
     logDebug("pcode_download_error", getErrorDetails(error));
     pcodeProgress.textContent = "Download did not complete";
-    setStatus(`Could not download p-code: ${error.message}`, true);
+    setStatus(`Could not download p-code: ${getErrorMessage(error)}`, true);
   } finally {
     pcodeDownloadButton.disabled = false;
     removeFileButton.disabled = false;
@@ -1441,7 +1549,7 @@ copyHashButton.addEventListener("click", async () => {
     copyHashButton.setAttribute("aria-label", "SHA-256 copied");
     copyHashButton.title = "SHA-256 copied";
     copyStatus.textContent = "SHA-256 copied to clipboard.";
-    window.clearTimeout(copyFeedbackTimeout);
+    window.clearTimeout(copyFeedbackTimeout ?? undefined);
     copyFeedbackTimeout = window.setTimeout(() => {
       copyHashButton.classList.remove("copied");
       copyHashButton.setAttribute("aria-label", "Copy SHA-256");
@@ -1449,7 +1557,7 @@ copyHashButton.addEventListener("click", async () => {
       copyStatus.textContent = "";
     }, 1500);
   } catch (error) {
-    setStatus(`Could not copy SHA-256: ${error.message}`, true);
+    setStatus(`Could not copy SHA-256: ${getErrorMessage(error)}`, true);
   }
 });
 for (const eventName of ["dragenter", "dragover"]) {
