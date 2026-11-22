@@ -38,13 +38,17 @@ Pages build and deployment source to **GitHub Actions** in Settings → Pages.
 
 ## Run locally
 
-Serve this directory over HTTP (ES modules and WebAssembly need a web server):
+Use Node.js 26 (the repository includes an `.nvmrc` for `nvm`), then install
+dependencies and build the static site:
 
 ```sh
-python3 -m http.server 8000
+npm ci
+npm run typecheck
+npm run build
+python3 -m http.server 8000 --directory site
 ```
 
-Open <http://localhost:8000>. 
+Open <http://localhost:8000>. The build output is written to `site/`.
 
 ## Acknowledgements
 

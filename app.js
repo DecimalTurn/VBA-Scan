@@ -27,6 +27,7 @@ const runtimeIndicator = document.querySelector(".runtime-dot");
 const statusMessage = document.querySelector("#status-message");
 const statusText = document.querySelector("#status-text");
 const analysisSpinner = document.querySelector("#analysis-spinner");
+const analysisProgress = document.querySelector("#analysis-progress");
 const debugLogButton = document.querySelector("#download-debug-log");
 const resultsElement = document.querySelector("#results");
 const resultSummary = document.querySelector("#result-summary");
@@ -81,7 +82,9 @@ const copyHashButton = document.querySelector("#copy-hash-button");
 const copyStatus = document.querySelector("#copy-status");
 
 let selectedFile = null;
-let pyodidePromise = null;
+const analysisWorker = new Worker(new URL("./analysis-worker.js", import.meta.url), { type: "module" });
+const workerRequests = new Map();
+let workerRequestSequence = 0;
 let scanning = false;
 let engineState = "loading";
 let copyFeedbackTimeout = null;
@@ -132,166 +135,6 @@ const macroFreeOfficeExtensions = new Set([
   "xlsx", "xltx", "docx", "dotx", "pptx", "potx", "ppsx",
 ]);
 
-const analyzePython = `
-import json
-import os
-import re
-import zipfile
-from oletools.olevba import VBA_Parser, VBA_Project
-
-def get_project_codepages(parser):
-    codepages = []
-    parsers = [parser]
-    while parsers:
-        current = parsers.pop()
-        parsers.extend(getattr(current, "ole_subfiles", []) or [])
-        if current.ole_file is None:
-            continue
-        try:
-            projects = current.find_vba_projects() or []
-        except Exception:
-            continue
-        for vba_root, project_path, dir_path in projects:
-            try:
-                project = VBA_Project(
-                    current.ole_file, vba_root, project_path, dir_path, current.relaxed
-                )
-                codepages.append({
-                    "project": str(project.projectname),
-                    "value": project.codepage,
-                    "name": project.codepage_name,
-                })
-            except Exception:
-                continue
-    return codepages
-
-def scan_document(path, pcode_path, vba_source_path, vba_archive_path, xlm_path):
-    parser = VBA_Parser(path)
-    try:
-        has_vba = parser.detect_vba_macros()
-        has_xlm = parser.detect_xlm_macros()
-        stomping = None
-        stomping_error = None
-        stomping_items = []
-        try:
-            stomping = parser.detect_vba_stomping()
-        except Exception as error:
-            stomping_error = str(error)
-        if stomping:
-          stomping_items = getattr(parser, "vba_stomping_items", [])
-
-        pcode_size = 0
-        pcode_error = None
-        pcode = ""
-        vba_source_size = 0
-        vba_source_archive_size = 0
-        vba_source_module_count = 0
-        vba_source_error = None
-        xlm_size = 0
-        xlm_error = None
-        xlm_sources = []
-        xlm_findings = []
-        if has_vba or stomping:
-            try:
-                pcode = parser.extract_pcode() or ""
-                if pcode:
-                    with open(pcode_path, "w", encoding="utf-8") as pcode_file:
-                        pcode_file.write(pcode)
-                    pcode_size = os.path.getsize(pcode_path)
-            except Exception as error:
-                pcode_error = str(error)
-
-        if has_vba:
-            try:
-                used_names = set()
-                source_parts = []
-                with zipfile.ZipFile(vba_archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-                    for index, (_, stream_path, vba_filename, vba_code) in enumerate(parser.extract_macros(), start=1):
-                        if stream_path == "VBA P-code" and vba_filename == "VBA_P-code.txt":
-                            continue
-                        if stream_path == "xlm_macro" and vba_filename == "xlm_macro.txt":
-                            continue
-                        filename = str(vba_filename).replace("\\\\", "/").rsplit("/", 1)[-1]
-                        if filename in ("", ".", ".."):
-                            filename = f"Module-{index}.bas"
-                        filename = re.sub(r'[<>:"/|?*\\x00-\\x1f]', "_", filename)
-                        stem, extension = os.path.splitext(filename)
-                        candidate = filename
-                        suffix = 2
-                        while candidate.casefold() in used_names:
-                            candidate = f"{stem}-{suffix}{extension}"
-                            suffix += 1
-                        used_names.add(candidate.casefold())
-                        archive.writestr(candidate, vba_code)
-                        source_parts.append(f"' ===== {candidate} =====\\n{vba_code}\\n")
-                        vba_source_module_count += 1
-                if vba_source_module_count:
-                    with open(vba_source_path, "w", encoding="utf-8", newline="") as source_file:
-                        source_file.write("\\n".join(source_parts))
-                    vba_source_size = os.path.getsize(vba_source_path)
-                    vba_source_archive_size = os.path.getsize(vba_archive_path)
-                else:
-                    os.unlink(vba_archive_path)
-            except Exception as error:
-                vba_source_error = str(error)
-                vba_source_module_count = 0
-                if os.path.exists(vba_archive_path):
-                    os.unlink(vba_archive_path)
-                if os.path.exists(vba_source_path):
-                    os.unlink(vba_source_path)
-
-        if has_xlm:
-          try:
-            xlm_sources = parser.extract_xlm_macros() or []
-            xlm_findings = [
-              {"type": kind, "keyword": keyword, "description": description}
-              for kind, keyword, description in parser.analyze_xlm_macros()
-            ]
-            if xlm_sources:
-              with open(xlm_path, "w", encoding="utf-8", newline="") as xlm_file:
-                for index, (location, code) in enumerate(xlm_sources):
-                  if index > 0:
-                    xlm_file.write("\\n")
-                  xlm_file.write(f"===== {location} =====\\n")
-                  xlm_file.write(code.rstrip() + "\\n")
-              xlm_size = os.path.getsize(xlm_path)
-          except Exception as error:
-            xlm_error = str(error)
-
-        findings_by_source = parser.analyze_macros_by_source() or {}
-        vba_source_findings = [
-          {"type": kind, "keyword": keyword, "description": description}
-          for kind, keyword, description in findings_by_source.get("vba_source", [])
-        ]
-        pcode_findings = [
-          {"type": kind, "keyword": keyword, "description": description}
-          for kind, keyword, description in findings_by_source.get("pcode", [])
-        ]
-        return json.dumps({
-            "has_vba": has_vba,
-            "has_xlm": has_xlm,
-            "stomping": stomping,
-            "stomping_error": stomping_error,
-            "stomping_items": stomping_items,
-            "pcode_size": pcode_size,
-            "pcode_error": pcode_error,
-            "vba_source_size": vba_source_size,
-            "vba_source_archive_size": vba_source_archive_size,
-            "vba_source_module_count": vba_source_module_count,
-            "vba_source_error": vba_source_error,
-            "xlm_size": xlm_size,
-            "xlm_error": xlm_error,
-            "xlm_macro_count": len(xlm_sources),
-            "project_codepages": get_project_codepages(parser),
-            "vba_source_findings": vba_source_findings,
-            "pcode_findings": pcode_findings,
-            "xlm_findings": xlm_findings,
-        })
-    finally:
-        parser.close()
-
-`;
-
 function logDebug(event, details = {}) {
   if (!debugMode) return;
   debugEvents.push({ timestamp: new Date().toISOString(), elapsed_ms: Math.round(performance.now()), event, ...details });
@@ -325,10 +168,61 @@ logDebug("debug_session_started", { user_agent: navigator.userAgent });
 
 function setStatus(message = "", isError = false) {
   statusText.textContent = message;
-  analysisSpinner.hidden = !scanning || isError;
-  statusMessage.hidden = !message && analysisSpinner.hidden;
+  const showProgress = scanning && !isError;
+  analysisSpinner.hidden = !showProgress;
+  analysisProgress.hidden = !showProgress;
+  statusMessage.hidden = !message && !showProgress;
+  statusMessage.classList.toggle("busy", showProgress);
   statusMessage.classList.toggle("error", isError);
 }
+
+function requestWorker(type, payload = {}, transfer = []) {
+  const requestId = ++workerRequestSequence;
+  return new Promise((resolve, reject) => {
+    workerRequests.set(requestId, { resolve, reject });
+    try {
+      analysisWorker.postMessage({ type, requestId, ...payload }, transfer);
+    } catch (error) {
+      workerRequests.delete(requestId);
+      reject(error);
+    }
+  });
+}
+
+analysisWorker.addEventListener("message", ({ data }) => {
+  if (data.type === "engine-status") {
+    setEngineState(data.state);
+    if (scanning) setStatus(data.message, data.state === "error");
+    else {
+      runtimeNote.textContent = data.message;
+      if (data.state === "error") setStatus(`Analysis engine could not be loaded: ${data.message}`, true);
+    }
+    return;
+  }
+  if (data.type === "scan-phase") {
+    if (scanning) setStatus(data.message);
+    return;
+  }
+  const pending = workerRequests.get(data.requestId);
+  if (!pending) return;
+  workerRequests.delete(data.requestId);
+  if (data.type === "file-bytes") pending.resolve(new Uint8Array(data.bytes));
+  else if (data.type === "scan-complete") pending.resolve(data);
+  else if (data.type === "request-error") pending.reject(new Error(data.message));
+});
+
+analysisWorker.addEventListener("error", (event) => {
+  const error = new Error(event.message || "The analysis worker stopped unexpectedly.");
+  for (const { reject } of workerRequests.values()) reject(error);
+  workerRequests.clear();
+  setEngineState("error");
+  if (scanning) {
+    setBusy(false);
+    setStatus(`Analysis could not be completed: ${error.message}`, true);
+  } else {
+    setStatus(`Analysis engine could not be loaded: ${error.message}`, true);
+  }
+});
 
 function logDuration(label, startedAt) {
   const duration = Number((performance.now() - startedAt).toFixed(1));
@@ -410,15 +304,7 @@ async function findPcodeSourceContext(keyword) {
 }
 
 async function readTemporaryFileBytes(path, offset, size) {
-  const pyodide = await pyodidePromise;
-  const stream = pyodide.FS.open(path, "r");
-  const buffer = new Uint8Array(size);
-  try {
-    const bytesRead = pyodide.FS.read(stream, buffer, 0, size, offset);
-    return buffer.subarray(0, bytesRead);
-  } finally {
-    pyodide.FS.close(stream);
-  }
+  return requestWorker("read-file", { path, offset, size });
 }
 
 async function appendVbaSourceChunk() {
@@ -571,13 +457,7 @@ function clearSelectedFile() {
   pcodeSourceContextCache.clear();
   fileInput.value = "";
   const temporaryPaths = [pcodePath, vbaSourcePath, vbaSourceArchivePath, xlmPath].filter(Boolean);
-  if (temporaryPaths.length && pyodidePromise) {
-    pyodidePromise.then((pyodide) => {
-      for (const path of temporaryPaths) {
-        try { pyodide.FS.unlink(path); } catch {}
-      }
-    });
-  }
+  if (temporaryPaths.length) analysisWorker.postMessage({ type: "clear-files", paths: temporaryPaths });
   pcodePath = "";
   vbaSourcePath = "";
   vbaSourceArchivePath = "";
@@ -733,83 +613,17 @@ async function downloadXlmMacros() {
 
 function setBusy(isBusy, message = "") {
   scanning = isBusy;
-  if (!isBusy) analysisSpinner.hidden = true;
+  if (!isBusy) {
+    analysisSpinner.hidden = true;
+    analysisProgress.hidden = true;
+    statusMessage.classList.remove("busy");
+  }
   removeFileButton.disabled = isBusy;
   runtimeNote.textContent = message || {
     loading: "Preparing analysis engine in background…",
     ready: "Analysis engine ready",
     error: "Engine unavailable; remove the file and upload again to retry",
   }[engineState];
-}
-
-async function loadPyodideEngine() {
-  if (!pyodidePromise) {
-    setEngineState("loading");
-    pyodidePromise = (async () => {
-      const engineStartedAt = performance.now();
-      const script = document.createElement("script");
-      script.src = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/pyodide.js`;
-      script.async = true;
-      const scriptStartedAt = performance.now();
-      document.head.append(script);
-      await new Promise((resolve, reject) => {
-        script.addEventListener("load", () => {
-          logDuration("Pyodide loader download and evaluation", scriptStartedAt);
-          resolve();
-        }, { once: true });
-        script.addEventListener("error", () => {
-          logDuration("Pyodide loader download failed", scriptStartedAt);
-          reject(new Error("Could not load the WebAssembly runtime. Check your internet connection and try again."));
-        }, { once: true });
-      });
-
-      const runtimeStartedAt = performance.now();
-      const pyodide = await globalThis.loadPyodide({
-        indexURL: `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`,
-      });
-      logDuration("Pyodide runtime startup (includes WASM asset downloads)", runtimeStartedAt);
-
-      const micropipStartedAt = performance.now();
-      await pyodide.loadPackage("micropip");
-      logDuration("micropip package load", micropipStartedAt);
-
-      const oletoolsStartedAt = performance.now();
-      const oletoolsResponse = await fetch(new URL("dist/oletools.zip", import.meta.url), { cache: "no-store" });
-      if (!oletoolsResponse.ok) {
-        throw new Error(`Could not load the bundled analysis packages (${oletoolsResponse.status}).`);
-      }
-      pyodide.FS.writeFile("/tmp/oletools.zip", new Uint8Array(await oletoolsResponse.arrayBuffer()));
-      await pyodide.runPythonAsync(
-        `import micropip
-await micropip.install([
-    "pyparsing>=2.1.0,<4",
-    "olefile>=0.46",
-    "easygui",
-    "colorclass",
-    "msoffcrypto-tool",
-])
-import sys
-sys.path.insert(0, "/tmp/oletools.zip")
-import oletools.olevba`,
-      );
-      logDuration("Vendored oletools and dependencies setup", oletoolsStartedAt);
-
-      const analyzerStartedAt = performance.now();
-      await pyodide.runPythonAsync(analyzePython);
-      logDuration("Python analyzer setup", analyzerStartedAt);
-      logDuration("Total analysis engine setup", engineStartedAt);
-      return pyodide;
-    })();
-
-    pyodidePromise.then(() => {
-      setEngineState("ready");
-    }, (error) => {
-      setEngineState("error");
-      pyodidePromise = null;
-      console.error("[VBA Scan] Analysis engine setup failed.", error);
-    });
-  }
-  return pyodidePromise;
 }
 
 function renderResults(result, elapsedMilliseconds, sha256, fileName) {
@@ -1166,17 +980,9 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
 async function analyzeSelectedFile() {
   if (!selectedFile || scanning) return;
 
-  setBusy(true, engineState === "ready" ? "Preparing document for analysis…" : "Loading WebAssembly analysis engine…");
-  setStatus("Initializing Python and oletools. The first run may take a little longer.");
+  setBusy(true, "Analyzing locally in your browser…");
+  setStatus("Reading document and calculating SHA-256…");
   try {
-    const pyodide = await loadPyodideEngine();
-    if (!selectedFile) return;
-
-    for (const temporaryPath of [pcodePath, vbaSourcePath, vbaSourceArchivePath, xlmPath]) {
-      if (temporaryPath) {
-        try { pyodide.FS.unlink(temporaryPath); } catch {}
-      }
-    }
     pcodePath = "";
     vbaSourcePath = "";
     vbaSourceArchivePath = "";
@@ -1188,8 +994,6 @@ async function analyzeSelectedFile() {
     xlmSize = 0;
     xlmMacroCount = 0;
 
-    setBusy(true, "Analyzing locally in your browser…");
-    setStatus();
     const file = selectedFile;
     const startedAt = performance.now();
     if (!globalThis.crypto?.subtle) {
@@ -1198,23 +1002,16 @@ async function analyzeSelectedFile() {
     const fileBytes = await file.arrayBuffer();
     const digest = await globalThis.crypto.subtle.digest("SHA-256", fileBytes);
     const sha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-    const path = `/tmp/vba-scan-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-    pcodePath = `/tmp/vba-scan-pcode-${Date.now()}.txt`;
-    vbaSourcePath = `/tmp/vba-scan-source-${Date.now()}.txt`;
-    vbaSourceArchivePath = `/tmp/vba-scan-source-${Date.now()}.zip`;
-    xlmPath = `/tmp/vba-scan-xlm-${Date.now()}.txt`;
-    pyodide.FS.writeFile(path, new Uint8Array(fileBytes));
     logDebug("analysis_started", { input_bytes: fileBytes.byteLength });
-    try {
-      const scanStartedAt = performance.now();
-      const rawResult = await pyodide.runPythonAsync(
-        `scan_document(${JSON.stringify(path)}, ${JSON.stringify(pcodePath)}, ${JSON.stringify(vbaSourcePath)}, ${JSON.stringify(vbaSourceArchivePath)}, ${JSON.stringify(xlmPath)})`,
-      );
-      logDuration("Document analysis", scanStartedAt);
-      renderResults(JSON.parse(rawResult), performance.now() - startedAt, sha256, file.name);
-    } finally {
-      pyodide.FS.unlink(path);
-    }
+    setStatus("Preparing Python and oletools for local analysis…");
+    const scanStartedAt = performance.now();
+    const scan = await requestWorker("scan", { fileBytes, fileName: file.name }, [fileBytes]);
+    logDuration("Document analysis", scanStartedAt);
+    pcodePath = scan.paths.pcode;
+    vbaSourcePath = scan.paths.vbaSource;
+    vbaSourceArchivePath = scan.paths.vbaArchive;
+    xlmPath = scan.paths.xlm;
+    renderResults(JSON.parse(scan.result), performance.now() - startedAt, sha256, file.name);
     setStatus("Analysis complete.");
   } catch (error) {
     logDebug("analysis_error", getErrorDetails(error));
@@ -1333,11 +1130,4 @@ dropZone.addEventListener("drop", (event) => {
   if (file) setSelectedFile(file);
 });
 
-loadPyodideEngine().then(() => {
-  if (!scanning) setBusy(false);
-}).catch((error) => {
-  if (!scanning) {
-    setBusy(false);
-    setStatus(`Analysis engine could not be loaded: ${error.message}`, true);
-  }
-});
+analysisWorker.postMessage({ type: "initialize" });

@@ -1,3 +1,5 @@
 VBA-Malware-Scanner-main/
 samples/
 .venv/
+node_modules/
+site/

@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noEmit": true,
+    "rootDir": ".",
+    "outDir": "site",
+    "skipLibCheck": true,
+    "lib": ["ES2022", "WebWorker"],
+    "rewriteRelativeImportExtensions": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": ["analysis-worker.ts", "analysis-python.ts"]
+}
