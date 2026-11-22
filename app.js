@@ -107,6 +107,7 @@ let pcodeSize = 0;
 let pcodeLoading = false;
 let pcodeDownloadInProgress = false;
 let pcodeDecoder = new TextDecoder("utf-8");
+const pcodeSourceContextCache = new Map();
 const debugEvents = [];
 if (debugMode) {
   try {
@@ -262,46 +263,8 @@ def scan_document(path, pcode_path, vba_source_path, vba_archive_path, xlm_path)
           {"type": kind, "keyword": keyword, "description": description}
           for kind, keyword, description in findings_by_source.get("vba_source", [])
         ]
-        def find_pcode_source_block(keyword):
-          pattern = re.compile(re.escape(keyword), re.IGNORECASE)
-          pcode_lines = pcode.splitlines()
-          in_module_streams = False
-          module_stream = None
-          for index, line in enumerate(pcode_lines):
-            stripped_line = line.strip()
-            if stripped_line == "Module streams:":
-              in_module_streams = True
-              continue
-            module_stream_match = re.fullmatch(r"(.+ - \\d+ bytes)", stripped_line)
-            if in_module_streams and module_stream_match:
-              module_stream = module_stream_match.group(1)
-              continue
-            line_match = re.fullmatch(r"Line #(\\d+):", stripped_line)
-            if not line_match:
-              continue
-            block = [line]
-            for candidate in pcode_lines[index + 1:]:
-              candidate_line = candidate.strip()
-              if re.fullmatch(r"Line #\\d+:", candidate_line):
-                break
-              if in_module_streams and re.fullmatch(r".+ - \\d+ bytes", candidate_line):
-                break
-              block.append(candidate)
-            if any(pattern.search(block_line) for block_line in block):
-              return {
-                "number": int(line_match.group(1)),
-                "text": "\\n".join(block).rstrip(),
-                "module_stream": module_stream,
-              }
-          return None
-
         pcode_findings = [
-          {
-            "type": kind,
-            "keyword": keyword,
-            "description": description,
-            "source_context": find_pcode_source_block(keyword),
-          }
+          {"type": kind, "keyword": keyword, "description": description}
           for kind, keyword, description in findings_by_source.get("pcode", [])
         ]
         return json.dumps({
@@ -375,6 +338,75 @@ function logDuration(label, startedAt) {
 
 async function readPcodeBytes(offset, size) {
   return readTemporaryFileBytes(pcodePath, offset, size);
+}
+
+async function findPcodeSourceContext(keyword) {
+  const cacheKey = keyword.trim().toLowerCase();
+  if (pcodeSourceContextCache.has(cacheKey)) return pcodeSourceContextCache.get(cacheKey);
+
+  const search = (async () => {
+    const pattern = new RegExp(keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    const decoder = new TextDecoder("utf-8");
+    let offset = 0;
+    let pendingLine = "";
+    let inModuleStreams = false;
+    let moduleStream = null;
+    let block = null;
+    const processLine = (line) => {
+      const trimmedLine = line.trim();
+      if (trimmedLine === "Module streams:") {
+        inModuleStreams = true;
+        return null;
+      }
+      const moduleStreamMatch = inModuleStreams && trimmedLine.match(/^(.+ - \d+ bytes)$/);
+      if (moduleStreamMatch) {
+        if (block?.matched) return block.context;
+        moduleStream = moduleStreamMatch[1];
+        block = null;
+        return null;
+      }
+      const lineMatch = trimmedLine.match(/^Line #(\d+):$/);
+      if (lineMatch) {
+        if (block?.matched) return block.context;
+        block = {
+          matched: false,
+          context: { number: Number(lineMatch[1]), text: line, module_stream: moduleStream },
+        };
+        return null;
+      }
+      if (block) {
+        block.context.text += `\n${line}`;
+        if (pattern.test(line)) block.matched = true;
+      }
+      return null;
+    };
+
+    while (offset < pcodeSize) {
+      const bytes = await readPcodeBytes(offset, Math.min(PCODE_CHUNK_SIZE, pcodeSize - offset));
+      if (bytes.length === 0) break;
+      offset += bytes.length;
+      pendingLine += decoder.decode(bytes, { stream: offset < pcodeSize });
+      const lines = pendingLine.split("\n");
+      pendingLine = lines.pop();
+      for (const line of lines) {
+        const context = processLine(line);
+        if (context) return context;
+      }
+    }
+    if (pendingLine) {
+      const context = processLine(pendingLine);
+      if (context) return context;
+    }
+    return block?.matched ? block.context : null;
+  })();
+
+  pcodeSourceContextCache.set(cacheKey, search);
+  try {
+    return await search;
+  } catch (error) {
+    pcodeSourceContextCache.delete(cacheKey);
+    throw error;
+  }
 }
 
 async function readTemporaryFileBytes(path, offset, size) {
@@ -523,6 +555,7 @@ function setSelectedFile(file) {
   }
 
   selectedFile = file;
+  pcodeSourceContextCache.clear();
   logDebug("file_selected", { size_bytes: file.size, extension });
   fileNameElement.textContent = file.name;
   fileSizeElement.textContent = formatFileSize(file.size);
@@ -535,6 +568,7 @@ function setSelectedFile(file) {
 
 function clearSelectedFile() {
   selectedFile = null;
+  pcodeSourceContextCache.clear();
   fileInput.value = "";
   const temporaryPaths = [pcodePath, vbaSourcePath, vbaSourceArchivePath, xlmPath].filter(Boolean);
   if (temporaryPaths.length && pyodidePromise) {
@@ -989,9 +1023,6 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
   const vbaSourceFindingsBySignature = new Map(
     vbaSourceFindings.map((finding) => [findingSignature(finding), finding]),
   );
-  const pcodeSourceLinesBySignature = new Map(
-    pcodeFindings.map((finding) => [findingSignature(finding), finding.source_context]),
-  );
   const pcodeFindingSignatures = new Set(pcodeFindings.map(findingSignature));
   const unmatchedPcodeFindingSignatures = new Set(
     [...pcodeFindingSignatures].filter((signature) => !vbaSourceFindingSignatures.has(signature)),
@@ -1012,7 +1043,7 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
     emptyMessage,
     matchingFindings = null,
     unmatchedFindingSignatures = null,
-    sourceLinesByFinding = null,
+    loadPcodeSourceContext = false,
   ) => {
     countElement.textContent = `${findings.length}`;
     if (findings.length === 0) {
@@ -1042,32 +1073,42 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
         unmatched.textContent = "⚠ No matching VBA indicator";
         content.append(unmatched);
       }
-      const findingKey = findingSignature(finding);
-      const sourceLines = sourceLinesByFinding?.get(findingKey);
-      if (sourceLinesByFinding?.has(findingKey)) {
+      if (loadPcodeSourceContext) {
         const sourceDetails = document.createElement("details");
         sourceDetails.className = "pcode-source-lines";
         const sourceSummary = document.createElement("summary");
-        sourceSummary.textContent = sourceLines
-          ? `Matching P-code Line #${sourceLines.number}`
-          : "P-code source block (no direct match)";
-        sourceDetails.append(sourceSummary);
-        if (sourceLines) {
-          if (sourceLines.module_stream) {
-            const moduleStream = document.createElement("div");
-            moduleStream.className = "pcode-source-module";
-            moduleStream.textContent = `Module streams: ${sourceLines.module_stream}`;
-            sourceDetails.append(moduleStream);
-          }
-          const sourceCode = document.createElement("pre");
-          sourceCode.textContent = sourceLines.text;
-          sourceDetails.append(sourceCode);
-        } else {
-          const noMatch = document.createElement("div");
-          noMatch.className = "pcode-source-lines-note";
-          noMatch.textContent = "This indicator may have been detected in decoded P-code content.";
-          sourceDetails.append(noMatch);
-        }
+        sourceSummary.textContent = "Show matching P-code source block";
+        const sourceContent = document.createElement("div");
+        sourceContent.className = "pcode-source-context";
+        sourceDetails.append(sourceSummary, sourceContent);
+        let loading = false;
+        sourceDetails.addEventListener("toggle", () => {
+          if (!sourceDetails.open || loading) return;
+          loading = true;
+          sourceContent.textContent = "Loading P-code source block…";
+          void findPcodeSourceContext(finding.keyword).then((sourceContext) => {
+            sourceContent.replaceChildren();
+            if (sourceContext) {
+              sourceSummary.textContent = `Matching P-code Line #${sourceContext.number}`;
+              if (sourceContext.module_stream) {
+                const moduleStream = document.createElement("div");
+                moduleStream.className = "pcode-source-module";
+                moduleStream.textContent = `Module streams: ${sourceContext.module_stream}`;
+                sourceContent.append(moduleStream);
+              }
+              const sourceCode = document.createElement("pre");
+              sourceCode.textContent = sourceContext.text;
+              sourceContent.append(sourceCode);
+            } else {
+              sourceSummary.textContent = "P-code source block (no direct match)";
+              sourceContent.textContent = "This indicator may have been detected in decoded P-code content.";
+            }
+          }).catch((error) => {
+            logDebug("pcode_source_context_error", getErrorDetails(error));
+            sourceContent.textContent = "Could not load P-code source block. Close and reopen to retry.";
+            loading = false;
+          });
+        });
         content.append(sourceDetails);
       }
       const matchingFinding = matchingFindings?.get(findingSignature(finding));
@@ -1109,7 +1150,7 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
     result.pcode_size ? "No suspicious indicators found in P-code." : "P-code was not available.",
     result.stomping === false ? vbaSourceFindingsBySignature : null,
     unmatchedPcodeFindingSignatures,
-    pcodeSourceLinesBySignature,
+    true,
   );
   renderFindingGroup(
     xlmFindingsList,
