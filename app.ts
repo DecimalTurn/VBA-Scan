@@ -529,14 +529,28 @@ function renderVbaSourceWindow(context: VbaSourceContext) {
   vbaSourceOutput.replaceChildren(...nodes);
 }
 
+function updateVbaSourceProgress(context: VbaSourceContext) {
+  const lineNumbers = context.lines
+    .map((line) => line.number)
+    .filter((number): number is number => typeof number === "number");
+  if (lineNumbers.length === 0) {
+    vbaSourceProgress.textContent = `Showing source from ${context.moduleName}`;
+    return;
+  }
+  const firstLine = Math.min(...lineNumbers);
+  const lastLine = Math.max(...lineNumbers);
+  const range = firstLine === lastLine ? `line ${firstLine}` : `lines ${firstLine}-${lastLine}`;
+  vbaSourceProgress.textContent = `Showing ${range} of ${context.moduleName}`;
+}
+
 async function loadMoreVbaSourceAbove() {
   const context = vbaSourceMatchContext;
   if (!context || vbaSourceWindowLoading || context.startByteOffset <= 0) return;
+  const pre = vbaSourceOutput.parentElement;
+  if (!pre) return;
   vbaSourceWindowLoading = true;
   vbaSourceLoadAboveButton.disabled = true;
   vbaSourceLoadBelowButton.disabled = true;
-  const pre = vbaSourceOutput.parentElement;
-  if (!pre) return;
   const previousHeight = pre.scrollHeight;
   try {
     const endOffset = context.startByteOffset;
@@ -555,11 +569,12 @@ async function loadMoreVbaSourceAbove() {
     if (lines.at(-1) === "") lines.pop();
     const encoder = new TextEncoder();
     let lineOffset = alignedOffset;
+    let precedingLineNumber = context.lines.find((line) => typeof line.number === "number")?.number;
     const addedLines = lines.map((line, index) => {
       const hasNewline = index < lines.length - 1 || text.endsWith("\n");
       const endByteOffset = lineOffset + encoder.encode(line).length + Number(hasNewline);
       const sourceText = line.replace(/\r$/, "");
-      const sourceLine = {
+      const sourceLine: SourceLine = {
         number: null,
         text: sourceText,
         matched: false,
@@ -569,10 +584,19 @@ async function loadMoreVbaSourceAbove() {
       lineOffset = endByteOffset;
       return sourceLine;
     });
+    for (let index = addedLines.length - 1; index >= 0; index -= 1) {
+      const sourceLine = addedLines[index];
+      if (/^' ===== .+ =====$/.test(sourceLine.text)) precedingLineNumber = undefined;
+      else if (precedingLineNumber != null) {
+        precedingLineNumber -= 1;
+        sourceLine.number = precedingLineNumber;
+      }
+    }
     if (addedLines.length) {
       context.lines.unshift(...addedLines);
       context.startByteOffset = addedLines[0].byteOffset;
       renderVbaSourceWindow(context);
+      updateVbaSourceProgress(context);
       pre.scrollTop += pre.scrollHeight - previousHeight;
     }
     vbaSourceLoadAboveButton.hidden = context.startByteOffset === 0;
@@ -614,13 +638,16 @@ async function loadMoreVbaSourceBelow() {
       if (endsWithNewline) lines.pop();
       const encoder = new TextEncoder();
       let lineOffset = context.endByteOffset;
+      let nextLineNumber = context.lines.at(-1)?.number;
       const addedLines = lines.map((line, index) => {
         const hasNewline = index < lines.length - 1 || endsWithNewline;
         const endByteOffset = lineOffset + encoder.encode(line).length + Number(hasNewline);
         const sourceText = line.replace(/\r$/, "");
         const moduleHeader = sourceText.match(/^' ===== (.+) =====$/);
+        if (moduleHeader) nextLineNumber = undefined;
+        else if (nextLineNumber !== undefined && nextLineNumber !== null) nextLineNumber += 1;
         const sourceLine = {
-          number: moduleHeader ? null : undefined,
+          number: moduleHeader || nextLineNumber == null ? null : nextLineNumber,
           text: sourceText,
           matched: false,
           byteOffset: lineOffset,
@@ -632,6 +659,7 @@ async function loadMoreVbaSourceBelow() {
       context.lines.push(...addedLines);
       context.endByteOffset = lineOffset;
       renderVbaSourceWindow(context);
+      updateVbaSourceProgress(context);
     }
     vbaSourceLoadBelowButton.hidden = atEnd && vbaSourceWindowPendingBytes.length === 0;
   } catch (error) {
@@ -660,8 +688,8 @@ function openVbaSourceMatch(context: VbaSourceContext) {
   vbaSourceMoreButton.hidden = true;
   vbaSourceControls.hidden = false;
   vbaSourceOutput.classList.add("vba-match-window");
-  vbaSourceProgress.textContent = "Showing source around the matched line";
   renderVbaSourceWindow(context);
+  updateVbaSourceProgress(context);
   vbaSourcePreview.hidden = false;
   sourceDialogTitle.textContent = "VBA source code";
   sourceCodeDialog.showModal();
