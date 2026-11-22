@@ -7,7 +7,7 @@
     <title>VBA Scan: Local macro analysis</title>
     <link rel="icon" type="image/svg+xml" href="assets/logo_notext.svg">
     <script src="theme.js"></script>
-    <link rel="stylesheet" href="styles.css?v=6">
+    <link rel="stylesheet" href="styles.css?v=7">
     <script type="module" src="app.js"></script>
   </head>
   <body>
@@ -184,14 +184,19 @@
                   <button id="source-dialog-close" type="button">Close</button>
                 </header>
                 <section id="vba-source-section" class="source-dialog-panel" hidden>
-                  <pre><code id="vba-source-output"></code></pre>
-                  <div id="vba-source-controls" class="code-controls" hidden>
-                    <span id="vba-source-progress" role="status" aria-live="polite"></span>
-                    <div>
-                      <button id="vba-source-more" type="button">Show more</button>
-                      <button id="vba-source-download" type="button">Download source files (.zip)</button>
-                      <button id="vba-source-text-download" type="button">Download VBA source (.txt)</button>
-                      <span id="vba-source-large-download-warning" class="code-download-warning" role="status" hidden>Large VBA source downloads may use substantial browser memory and slow or crash this tab.</span>
+                  <div id="vba-source-preview">
+                    <div id="vba-source-match-location" class="vba-source-match-location" hidden></div>
+                    <div class="source-window-action"><button id="vba-source-load-above" class="source-edge-action" type="button" aria-label="Load more VBA source above" title="Load more above" hidden>⬆️</button></div>
+                    <pre><code id="vba-source-output"></code></pre>
+                    <div class="source-window-action"><button id="vba-source-load-below" class="source-edge-action" type="button" aria-label="Load more VBA source below" title="Load more below" hidden>⬇️</button></div>
+                    <div id="vba-source-controls" class="code-controls" hidden>
+                      <span id="vba-source-progress" role="status" aria-live="polite"></span>
+                      <div>
+                        <button id="vba-source-more" type="button">Show more</button>
+                        <button id="vba-source-download" type="button">Download source files (.zip)</button>
+                        <button id="vba-source-text-download" type="button">Download VBA source (.txt)</button>
+                        <span id="vba-source-large-download-warning" class="code-download-warning" role="status" hidden>Large VBA source downloads may use substantial browser memory and slow or crash this tab.</span>
+                      </div>
                     </div>
                   </div>
                 </section>

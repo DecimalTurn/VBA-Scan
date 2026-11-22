@@ -23,6 +23,7 @@ const fileNameElement = document.querySelector("#file-name");
 const fileSizeElement = document.querySelector("#file-size");
 const removeFileButton = document.querySelector("#remove-file");
 const runtimeNote = document.querySelector("#runtime-note");
+const runtimeNoteContainer = runtimeNote.closest(".runtime-note");
 const runtimeIndicator = document.querySelector(".runtime-dot");
 const statusMessage = document.querySelector("#status-message");
 const statusText = document.querySelector("#status-text");
@@ -39,10 +40,14 @@ const sourceCodeDialog = document.querySelector("#source-code-dialog");
 const sourceDialogTitle = document.querySelector("#source-dialog-title");
 const sourceDialogCloseButton = document.querySelector("#source-dialog-close");
 const vbaSourceSection = document.querySelector("#vba-source-section");
+const vbaSourcePreview = document.querySelector("#vba-source-preview");
+const vbaSourceMatchLocation = document.querySelector("#vba-source-match-location");
 const vbaSourceOutput = document.querySelector("#vba-source-output");
 const vbaSourceControls = document.querySelector("#vba-source-controls");
 const vbaSourceProgress = document.querySelector("#vba-source-progress");
 const vbaSourceMoreButton = document.querySelector("#vba-source-more");
+const vbaSourceLoadAboveButton = document.querySelector("#vba-source-load-above");
+const vbaSourceLoadBelowButton = document.querySelector("#vba-source-load-below");
 const vbaSourceDownloadButton = document.querySelector("#vba-source-download");
 const vbaSourceTextDownloadButton = document.querySelector("#vba-source-text-download");
 const vbaSourceLargeDownloadWarning = document.querySelector("#vba-source-large-download-warning");
@@ -97,6 +102,10 @@ let vbaSourceArchiveSize = 0;
 let vbaSourceLoading = false;
 let vbaSourceDownloadInProgress = false;
 let vbaSourceDecoder = new TextDecoder("utf-8");
+let vbaSourceMatchContext = null;
+let vbaSourceWindowReadOffset = 0;
+let vbaSourceWindowPendingBytes = new Uint8Array();
+let vbaSourceWindowLoading = false;
 let xlmPath = "";
 let xlmSize = 0;
 let xlmMacroCount = 0;
@@ -111,6 +120,7 @@ let pcodeLoading = false;
 let pcodeDownloadInProgress = false;
 let pcodeDecoder = new TextDecoder("utf-8");
 const pcodeSourceContextCache = new Map();
+const vbaSourceContextCache = new Map();
 const debugEvents = [];
 if (debugMode) {
   try {
@@ -303,6 +313,304 @@ async function findPcodeSourceContext(keyword) {
   }
 }
 
+async function findVbaSourceContext(keyword) {
+  const searchTerm = keyword.trim().toLowerCase();
+  if (!searchTerm || !vbaSourceSize) return null;
+  if (vbaSourceContextCache.has(searchTerm)) return vbaSourceContextCache.get(searchTerm);
+
+  const search = (async () => {
+    const decoder = new TextDecoder("utf-8");
+    const encoder = new TextEncoder();
+    let offset = 0;
+    let scannedOffset = 0;
+    let pendingLine = "";
+    let moduleName = "";
+    let moduleLineNumber = 0;
+    let precedingLines = [];
+    let matchedLine = null;
+    let contextLines = [];
+    let followingLinesRemaining = 2;
+    const getContext = () => ({
+      moduleName,
+      lineNumber: matchedLine.number,
+      lines: contextLines,
+      startByteOffset: contextLines[0].byteOffset,
+      endByteOffset: contextLines.at(-1).endByteOffset,
+    });
+    const processLine = (line, newlineBytes) => {
+      const byteOffset = scannedOffset;
+      scannedOffset += encoder.encode(line).length + newlineBytes;
+      const sourceText = line.replace(/\r$/, "");
+      const moduleHeader = sourceText.match(/^' ===== (.+) =====$/);
+      if (moduleHeader) {
+        if (matchedLine) return getContext();
+        moduleName = moduleHeader[1];
+        moduleLineNumber = 0;
+        precedingLines = [];
+        return null;
+      }
+      if (!moduleName) return null;
+
+      const sourceLine = {
+        number: ++moduleLineNumber,
+        text: sourceText,
+        matched: false,
+        byteOffset,
+        endByteOffset: scannedOffset,
+      };
+      if (matchedLine) {
+        contextLines.push(sourceLine);
+        followingLinesRemaining -= 1;
+        return followingLinesRemaining === 0 ? getContext() : null;
+      }
+      if (line.toLowerCase().includes(searchTerm)) {
+        sourceLine.matched = true;
+        matchedLine = sourceLine;
+        contextLines = [...precedingLines, sourceLine];
+        return null;
+      }
+      precedingLines.push(sourceLine);
+      if (precedingLines.length > 2) precedingLines.shift();
+      return null;
+    };
+
+    while (offset < vbaSourceSize) {
+      const bytes = await readTemporaryFileBytes(
+        vbaSourcePath,
+        offset,
+        Math.min(VBA_SOURCE_CHUNK_SIZE, vbaSourceSize - offset),
+      );
+      if (bytes.length === 0) break;
+      offset += bytes.length;
+      pendingLine += decoder.decode(bytes, { stream: offset < vbaSourceSize });
+      const lines = pendingLine.split("\n");
+      pendingLine = lines.pop();
+      for (const line of lines) {
+        const context = processLine(line, 1);
+        if (context) return context;
+      }
+    }
+    if (pendingLine) {
+      const context = processLine(pendingLine, 0);
+      if (context) return context;
+    }
+    return matchedLine ? getContext() : null;
+  })();
+
+  vbaSourceContextCache.set(searchTerm, search);
+  try {
+    return await search;
+  } catch (error) {
+    vbaSourceContextCache.delete(searchTerm);
+    throw error;
+  }
+}
+
+function renderVbaSourceContext(container, context) {
+  const module = document.createElement("div");
+  module.className = "vba-source-context-module";
+  module.textContent = `${context.moduleName} · line ${context.lineNumber}`;
+  const code = document.createElement("pre");
+  for (const line of context.lines) {
+    const sourceLine = document.createElement("span");
+    sourceLine.className = line.matched ? "vba-source-context-line is-match" : "vba-source-context-line";
+    sourceLine.textContent = line.number == null
+      ? line.text
+      : `${String(line.number).padStart(4, " ")}  ${line.text}`;
+    code.append(sourceLine, document.createTextNode("\n"));
+  }
+  container.replaceChildren(module, code);
+}
+
+function renderVbaSourceWindow(context) {
+  const nodes = [];
+  for (const line of context.lines) {
+    const sourceLine = document.createElement("span");
+    sourceLine.className = line.matched ? "vba-source-context-line is-match" : "vba-source-context-line";
+    sourceLine.textContent = line.text;
+    nodes.push(sourceLine, document.createTextNode("\n"));
+  }
+  vbaSourceOutput.replaceChildren(...nodes);
+}
+
+async function loadMoreVbaSourceAbove() {
+  const context = vbaSourceMatchContext;
+  if (!context || vbaSourceWindowLoading || context.startByteOffset <= 0) return;
+  vbaSourceWindowLoading = true;
+  vbaSourceLoadAboveButton.disabled = true;
+  vbaSourceLoadBelowButton.disabled = true;
+  const pre = vbaSourceOutput.parentElement;
+  const previousHeight = pre.scrollHeight;
+  try {
+    const endOffset = context.startByteOffset;
+    const startOffset = Math.max(0, endOffset - VBA_SOURCE_CHUNK_SIZE - 4);
+    let bytes = await readTemporaryFileBytes(vbaSourcePath, startOffset, endOffset - startOffset);
+    let alignedOffset = startOffset;
+    if (startOffset > 0) {
+      const newlineIndex = bytes.indexOf(10);
+      if (newlineIndex >= 0) {
+        alignedOffset += newlineIndex + 1;
+        bytes = bytes.subarray(newlineIndex + 1);
+      }
+    }
+    const text = new TextDecoder("utf-8").decode(bytes);
+    const lines = text.split("\n");
+    if (lines.at(-1) === "") lines.pop();
+    const encoder = new TextEncoder();
+    let lineOffset = alignedOffset;
+    const addedLines = lines.map((line, index) => {
+      const hasNewline = index < lines.length - 1 || text.endsWith("\n");
+      const endByteOffset = lineOffset + encoder.encode(line).length + Number(hasNewline);
+      const sourceText = line.replace(/\r$/, "");
+      const sourceLine = {
+        number: null,
+        text: sourceText,
+        matched: false,
+        byteOffset: lineOffset,
+        endByteOffset,
+      };
+      lineOffset = endByteOffset;
+      return sourceLine;
+    });
+    if (addedLines.length) {
+      context.lines.unshift(...addedLines);
+      context.startByteOffset = addedLines[0].byteOffset;
+      renderVbaSourceWindow(context);
+      pre.scrollTop += pre.scrollHeight - previousHeight;
+    }
+    vbaSourceLoadAboveButton.hidden = context.startByteOffset === 0;
+  } catch (error) {
+    logDebug("vba_source_context_above_error", getErrorDetails(error));
+    vbaSourceProgress.textContent = "Could not load earlier VBA source lines.";
+  } finally {
+    vbaSourceLoadAboveButton.disabled = false;
+    vbaSourceLoadBelowButton.disabled = false;
+    vbaSourceWindowLoading = false;
+  }
+}
+
+async function loadMoreVbaSourceBelow() {
+  const context = vbaSourceMatchContext;
+  if (!context || vbaSourceWindowLoading || vbaSourceWindowReadOffset >= vbaSourceSize) return;
+  vbaSourceWindowLoading = true;
+  vbaSourceLoadBelowButton.disabled = true;
+  vbaSourceLoadAboveButton.disabled = true;
+  try {
+    const bytes = await readTemporaryFileBytes(
+      vbaSourcePath,
+      vbaSourceWindowReadOffset,
+      Math.min(VBA_SOURCE_CHUNK_SIZE, vbaSourceSize - vbaSourceWindowReadOffset),
+    );
+    vbaSourceWindowReadOffset += bytes.length;
+    const combined = new Uint8Array(vbaSourceWindowPendingBytes.length + bytes.length);
+    combined.set(vbaSourceWindowPendingBytes);
+    combined.set(bytes, vbaSourceWindowPendingBytes.length);
+    const atEnd = vbaSourceWindowReadOffset >= vbaSourceSize;
+    const lastNewline = combined.lastIndexOf(10);
+    const completeLength = atEnd ? combined.length : lastNewline + 1;
+    const completeBytes = combined.subarray(0, Math.max(0, completeLength));
+    vbaSourceWindowPendingBytes = combined.slice(Math.max(0, completeLength));
+    if (completeBytes.length) {
+      const text = new TextDecoder("utf-8").decode(completeBytes);
+      const lines = text.split("\n");
+      const endsWithNewline = completeBytes.at(-1) === 10;
+      if (endsWithNewline) lines.pop();
+      const encoder = new TextEncoder();
+      let lineOffset = context.endByteOffset;
+      const addedLines = lines.map((line, index) => {
+        const hasNewline = index < lines.length - 1 || endsWithNewline;
+        const endByteOffset = lineOffset + encoder.encode(line).length + Number(hasNewline);
+        const sourceText = line.replace(/\r$/, "");
+        const moduleHeader = sourceText.match(/^' ===== (.+) =====$/);
+        const sourceLine = {
+          number: moduleHeader ? null : undefined,
+          text: sourceText,
+          matched: false,
+          byteOffset: lineOffset,
+          endByteOffset,
+        };
+        lineOffset = endByteOffset;
+        return sourceLine;
+      });
+      context.lines.push(...addedLines);
+      context.endByteOffset = lineOffset;
+      renderVbaSourceWindow(context);
+    }
+    vbaSourceLoadBelowButton.hidden = atEnd && vbaSourceWindowPendingBytes.length === 0;
+  } catch (error) {
+    logDebug("vba_source_context_below_error", getErrorDetails(error));
+    vbaSourceProgress.textContent = "Could not load later VBA source lines.";
+  } finally {
+    vbaSourceLoadBelowButton.disabled = false;
+    vbaSourceLoadAboveButton.disabled = false;
+    vbaSourceWindowLoading = false;
+  }
+}
+
+function openVbaSourceMatch(context) {
+  for (const section of [vbaSourceSection, xlmSection, pcodeSection]) {
+    section.hidden = section !== vbaSourceSection;
+  }
+  vbaSourceMatchContext = context;
+  vbaSourceWindowReadOffset = context.endByteOffset;
+  vbaSourceWindowPendingBytes = new Uint8Array();
+  vbaSourceOffset = 0;
+  vbaSourceOutput.replaceChildren();
+  vbaSourceMatchLocation.textContent = `${context.moduleName} · line ${context.lineNumber}`;
+  vbaSourceMatchLocation.hidden = false;
+  vbaSourceLoadAboveButton.hidden = context.startByteOffset === 0;
+  vbaSourceLoadBelowButton.hidden = vbaSourceWindowReadOffset >= vbaSourceSize;
+  vbaSourceMoreButton.hidden = true;
+  vbaSourceControls.hidden = false;
+  vbaSourceOutput.classList.add("vba-match-window");
+  vbaSourceProgress.textContent = "Showing source around the matched line";
+  renderVbaSourceWindow(context);
+  vbaSourcePreview.hidden = false;
+  sourceDialogTitle.textContent = "VBA source code";
+  sourceCodeDialog.showModal();
+}
+
+function createVbaSourceDetails(keyword) {
+  const details = document.createElement("details");
+  details.className = "vba-source-lines";
+  const summary = document.createElement("summary");
+  summary.textContent = "Show matching VBA source line";
+  const content = document.createElement("div");
+  content.className = "vba-source-context";
+  details.append(summary, content);
+  let loading = false;
+  let loaded = false;
+  details.addEventListener("toggle", () => {
+    if (!details.open || loading || loaded) return;
+    loading = true;
+    content.textContent = "Searching extracted VBA source…";
+    void findVbaSourceContext(keyword).then((context) => {
+      content.replaceChildren();
+      if (!context) {
+        summary.textContent = "VBA source line (no direct match)";
+        content.textContent = "No direct match was found in the extracted VBA source.";
+        loaded = true;
+        return;
+      }
+      summary.textContent = `Matched ${context.moduleName}, line ${context.lineNumber}`;
+      renderVbaSourceContext(content, context);
+      const seeMore = document.createElement("button");
+      seeMore.type = "button";
+      seeMore.className = "source-see-more";
+      seeMore.textContent = "See more";
+      seeMore.addEventListener("click", () => openVbaSourceMatch(context));
+      content.append(seeMore);
+      loaded = true;
+    }).catch((error) => {
+      logDebug("vba_source_context_error", getErrorDetails(error));
+      content.textContent = "Could not search VBA source. Close and reopen to retry.";
+    }).finally(() => {
+      loading = false;
+    });
+  });
+  return details;
+}
+
 async function readTemporaryFileBytes(path, offset, size) {
   return requestWorker("read-file", { path, offset, size });
 }
@@ -396,13 +704,30 @@ function openSourcePreview(sourceType) {
   for (const section of Object.values(sources).map(({ section }) => section)) {
     section.hidden = section !== source.section;
   }
+  if (sourceType === "vba") {
+    vbaSourceMatchContext = null;
+    vbaSourceOffset = 0;
+    vbaSourceDecoder = new TextDecoder("utf-8");
+    vbaSourceOutput.replaceChildren();
+    vbaSourceOutput.classList.remove("vba-match-window");
+    vbaSourceMatchLocation.hidden = true;
+    vbaSourceLoadAboveButton.hidden = true;
+    vbaSourceLoadBelowButton.hidden = true;
+    vbaSourceMoreButton.hidden = !source.size;
+    vbaSourceMoreButton.textContent = "Show more";
+    vbaSourceControls.hidden = !source.size;
+    vbaSourcePreview.hidden = false;
+  }
   sourceDialogTitle.textContent = source.title;
   sourceCodeDialog.showModal();
-  if (!source.size || source.offset > 0) return;
+  if (!source.size) return;
   if (sourceType === "vba") {
     if (vbaSourceSize <= VBA_SOURCE_PREVIEW_LIMIT) void loadVbaSourcePreview();
     else void appendVbaSourceChunk();
-  } else if (sourceType === "xlm") {
+    return;
+  }
+  if (source.offset > 0) return;
+  if (sourceType === "xlm") {
     void appendXlmChunk();
   } else {
     void appendPcodeChunk();
@@ -442,6 +767,7 @@ function setSelectedFile(file) {
 
   selectedFile = file;
   pcodeSourceContextCache.clear();
+  vbaSourceContextCache.clear();
   logDebug("file_selected", { size_bytes: file.size, extension });
   fileNameElement.textContent = file.name;
   fileSizeElement.textContent = formatFileSize(file.size);
@@ -455,6 +781,7 @@ function setSelectedFile(file) {
 function clearSelectedFile() {
   selectedFile = null;
   pcodeSourceContextCache.clear();
+  vbaSourceContextCache.clear();
   fileInput.value = "";
   const temporaryPaths = [pcodePath, vbaSourcePath, vbaSourceArchivePath, xlmPath].filter(Boolean);
   if (temporaryPaths.length) analysisWorker.postMessage({ type: "clear-files", paths: temporaryPaths });
@@ -855,10 +1182,13 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
     countElement,
     findings,
     emptyMessage,
-    matchingFindings = null,
-    unmatchedFindingSignatures = null,
-    loadPcodeSourceContext = false,
+    options = {},
   ) => {
+    const {
+      matchingFindings = null,
+      unmatchedFindingSignatures = null,
+      sourceContextType = null,
+    } = options;
     countElement.textContent = `${findings.length}`;
     if (findings.length === 0) {
       const empty = document.createElement("div");
@@ -887,7 +1217,7 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
         unmatched.textContent = "⚠ No matching VBA indicator";
         content.append(unmatched);
       }
-      if (loadPcodeSourceContext) {
+      if (sourceContextType === "pcode") {
         const sourceDetails = document.createElement("details");
         sourceDetails.className = "pcode-source-lines";
         const sourceSummary = document.createElement("summary");
@@ -925,6 +1255,9 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
         });
         content.append(sourceDetails);
       }
+      if (sourceContextType === "vba") {
+        content.append(createVbaSourceDetails(finding.keyword));
+      }
       const matchingFinding = matchingFindings?.get(findingSignature(finding));
       if (matchingFinding) {
         const matchDetails = document.createElement("details");
@@ -956,15 +1289,18 @@ function renderResults(result, elapsedMilliseconds, sha256, fileName) {
     vbaSourceFindingCount,
     vbaSourceFindings,
     result.has_vba ? "No suspicious indicators found in VBA source code." : "No VBA source code available.",
+    { sourceContextType: "vba" },
   );
   renderFindingGroup(
     pcodeFindingsList,
     pcodeFindingCount,
     pcodeFindings,
     result.pcode_size ? "No suspicious indicators found in P-code." : "P-code was not available.",
-    result.stomping === false ? vbaSourceFindingsBySignature : null,
-    unmatchedPcodeFindingSignatures,
-    true,
+    {
+      matchingFindings: result.stomping === false ? vbaSourceFindingsBySignature : null,
+      unmatchedFindingSignatures: unmatchedPcodeFindingSignatures,
+      sourceContextType: "pcode",
+    },
   );
   renderFindingGroup(
     xlmFindingsList,
@@ -1012,7 +1348,8 @@ async function analyzeSelectedFile() {
     vbaSourceArchivePath = scan.paths.vbaArchive;
     xlmPath = scan.paths.xlm;
     renderResults(JSON.parse(scan.result), performance.now() - startedAt, sha256, file.name);
-    setStatus("Analysis complete.");
+    runtimeNoteContainer.hidden = true;
+    setStatus("✅ Analysis complete.");
   } catch (error) {
     logDebug("analysis_error", getErrorDetails(error));
     setStatus(`Analysis could not be completed: ${error.message}`, true);
@@ -1037,6 +1374,8 @@ sourceDialogCloseButton.addEventListener("click", () => sourceCodeDialog.close()
 sourceCodeDialog.addEventListener("click", (event) => {
   if (event.target === sourceCodeDialog) sourceCodeDialog.close();
 });
+vbaSourceLoadAboveButton.addEventListener("click", loadMoreVbaSourceAbove);
+vbaSourceLoadBelowButton.addEventListener("click", loadMoreVbaSourceBelow);
 vbaSourceMoreButton.addEventListener("click", appendVbaSourceChunk);
 vbaSourceDownloadButton.addEventListener("click", downloadVbaSourceArchive);
 vbaSourceTextDownloadButton.addEventListener("click", downloadVbaSourceText);

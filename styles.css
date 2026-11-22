@@ -236,6 +236,7 @@ h2 { margin: 8px 0 0; font-family: var(--display); font-size: 18px; font-weight:
 
 .panel-actions { margin-top: 18px; }
 .runtime-note { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--text-subtle); font-size: 10px; }
+.runtime-note[hidden] { display: none; }
 .runtime-dot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--neutral); }
 .runtime-dot[data-state="loading"] { background: var(--warning); animation: status-pulse 1.4s ease-in-out infinite; }
 .runtime-dot[data-state="ready"] { background: var(--good); }
@@ -307,7 +308,13 @@ h2 { margin: 8px 0 0; font-family: var(--display); font-size: 18px; font-weight:
 .source-dialog-heading h2 { margin: 0; color: var(--ink); font-size: 14px; font-weight: 650; }
 .source-dialog-panel { min-height: 0; }
 .source-dialog-panel[hidden] { display: none; }
+.vba-source-preview[hidden] { display: none; }
 .source-dialog-panel pre { max-height: min(62vh, 42rem); margin: 0; padding: 13px 16px; overflow: auto; color: var(--ink); font: 10px/1.6 var(--mono); tab-size: 4; white-space: pre; }
+.source-window-action { padding: 0 16px; }
+.source-edge-action { display: block; width: 100%; padding: 5px 0; border: 0; background: transparent; color: var(--accent); font: 16px/1 var(--sans); text-align: center; cursor: pointer; }
+.source-edge-action:hover { color: var(--ink); }
+.source-edge-action:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.source-edge-action[hidden] { display: none; }
 .code-unavailable { color: var(--text-muted); }
 .code-controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 14px; border-top: 1px solid var(--line-soft); color: var(--text-muted); font: 9px var(--mono); }
 .code-controls[hidden] { display: none; }
@@ -342,6 +349,20 @@ h2 { margin: 8px 0 0; font-family: var(--display); font-size: 18px; font-weight:
 .pcode-source-module { margin-top: 6px; color: var(--text-subtle); font: 10px/1.4 var(--mono); overflow-wrap: anywhere; }
 .pcode-source-lines pre { max-height: 14rem; margin: 7px 0 0; padding: 8px; overflow: auto; border: 1px solid var(--line-soft); border-radius: 4px; background: var(--control); color: var(--ink); font: 10px/1.5 var(--mono); white-space: pre; }
 .pcode-source-lines-note { margin-top: 6px; color: var(--text-subtle); font-size: 10px; line-height: 1.4; }
+.vba-source-lines { margin-top: 8px; padding-left: 8px; border-left: 2px solid var(--line-faint); }
+.vba-source-lines > summary { color: var(--text-muted); font-size: 10px; cursor: pointer; }
+.vba-source-lines > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.vba-source-context { margin-top: 7px; }
+.vba-source-context-module { color: var(--text-subtle); font: 10px/1.4 var(--mono); overflow-wrap: anywhere; }
+.vba-source-match-location { padding: 12px 16px 0; color: var(--text-subtle); font: 10px/1.4 var(--mono); overflow-wrap: anywhere; }
+.vba-source-match-location[hidden] { display: none; }
+.source-dialog-panel pre code.vba-match-window { display: block; font: 10px/1 var(--mono); }
+.vba-source-context pre { max-height: 14rem; margin: 6px 0 0; padding: 7px; overflow: auto; border: 1px solid var(--line-soft); border-radius: 4px; background: var(--control); color: var(--ink); font: 10px/1 var(--mono); }
+.vba-source-context-line { display: block; padding: 0 5px; border-left: 3px solid transparent; white-space: pre-wrap; overflow-wrap: anywhere; }
+.vba-source-context-line.is-match { border-left-color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger-text); font-weight: 650; }
+.source-see-more { margin-top: 7px; padding: 0; border: 0; background: transparent; color: var(--accent); font: 10px var(--sans); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.source-see-more:hover { color: var(--ink); }
+.source-see-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .finding-match { margin-top: 8px; padding-left: 8px; border-left: 2px solid var(--line-faint); }
 .finding-match > summary { color: var(--text-muted); font-size: 10px; cursor: pointer; }
 .finding-match-content { display: grid; gap: 2px; padding: 6px 0 2px; }
