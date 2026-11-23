@@ -20,6 +20,10 @@ Start from the failing behavior and identify which layer owns it:
 
 Keep a change within its owning layer where possible. If oletools behavior changes, update or add a focused test alongside the implementation.
 
+### VBA parsing and detection safety
+
+The scanner analyzes potentially malicious VBA, so syntax-related blind spots can hide real threats. Do not assume commands use conventional spacing or formatting: VBA permits compact syntax such as a colon statement separator with no surrounding spaces (`Then:Open`). When changing parsing or detection, check the relevant VBA syntax and add regression tests for valid syntax variants as well as nearby non-command cases, so fixes do not introduce false negatives. When in doubt, it's better to report more threats than to miss potential ones.
+
 ## 3. Validate Python analysis changes
 
 From the oletools checkout, run the full test suite:
