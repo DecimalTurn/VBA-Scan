@@ -164,7 +164,6 @@ const pcodeWarningIcon = requireElement("#pcode-warning-icon");
 const pcodeMatchNote = requireElement("#pcode-match-note");
 const pcodeFindingsList = requireElement("#pcode-findings-list");
 const pcodeFindingCount = requireElement("#pcode-finding-count");
-const findingCount = requireElement("#finding-count");
 const analysisTime = requireElement("#analysis-time");
 const documentHash = requireElement("#document-hash");
 const documentFilename = requireElement("#document-filename");
@@ -1295,9 +1294,13 @@ function renderResults(result: ScanResult, elapsedMilliseconds: number, sha256: 
   const sourceLocationSignature = (finding: Finding) => finding.type === "Hex String"
     ? `${findingSignature(finding)}\u0000${finding.description.trim().toLowerCase()}`
     : findingSignature(finding);
-  const vbaSourceLocationsBySignature = new Map(
-    result.vba_source_locations.map((location) => [sourceLocationSignature(location), location]),
-  );
+  const vbaSourceLocationsBySignature = new Map<string, VbaSourceLocation[]>();
+  result.vba_source_locations.forEach((location) => {
+    const signature = sourceLocationSignature(location);
+    const locations = vbaSourceLocationsBySignature.get(signature);
+    if (locations) locations.push(location);
+    else vbaSourceLocationsBySignature.set(signature, [location]);
+  });
   const vbaSourceFindingSignatures = new Set(vbaSourceFindings.map(findingSignature));
   const vbaSourceFindingsBySignature = new Map(
     vbaSourceFindings.map((finding) => [findingSignature(finding), finding]),
@@ -1313,20 +1316,6 @@ function renderResults(result: ScanResult, elapsedMilliseconds: number, sha256: 
   pcodeFindingsGroup.open = !pcodeGroupShouldStartCollapsed;
   pcodeWarningIcon.hidden = !result.stomping && pcodeFindingsAreInVbaSource;
   pcodeMatchNote.hidden = !(result.stomping === false && pcodeFindings.length > 0 && pcodeFindingsAreInVbaSource);
-  const countDisplayedFindings = (findings: Finding[]) => {
-    const hasHexGroup = findings.some((finding) =>
-      finding.type === "Hex String"
-      || (finding.type === "Suspicious" && finding.keyword.trim().toLowerCase() === "hex strings"),
-    );
-    return findings.filter((finding) =>
-      finding.type !== "Hex String"
-      && !(finding.type === "Suspicious" && finding.keyword.trim().toLowerCase() === "hex strings"),
-    ).length + Number(hasHexGroup);
-  };
-  const totalFindings = countDisplayedFindings(vbaSourceFindings)
-    + countDisplayedFindings(xlmFindings)
-    + (pcodeGroupShouldStartCollapsed ? 0 : countDisplayedFindings(pcodeFindings));
-  findingCount.textContent = `${totalFindings} ${totalFindings === 1 ? "indicator" : "indicators"}`;
   const renderFindingGroup = (
     listElement: HTMLElement,
     countElement: HTMLElement,
@@ -1368,7 +1357,13 @@ function renderResults(result: ScanResult, elapsedMilliseconds: number, sha256: 
       keyword.textContent = finding.keyword;
       const description = document.createElement("div");
       description.className = "finding-description";
-      description.textContent = finding.description.replace(" (option --decode to see all)", "");
+      const sourceLocations = sourceContextType === "vba"
+        ? vbaSourceLocationsBySignature.get(findingSignature(finding)) || []
+        : [];
+      const locationCount = finding.keyword.trim().toLowerCase() === "lib" ? sourceLocations.length : 0;
+      description.textContent = `${finding.description.replace(" (option --decode to see all)", "")}${
+        locationCount > 1 ? ` (${locationCount} source locations)` : ""
+      }`;
       content.append(keyword, description);
       if (unmatchedFindingSignatures?.has(findingSignature(finding))) {
         const unmatched = document.createElement("div");
@@ -1415,8 +1410,7 @@ function renderResults(result: ScanResult, elapsedMilliseconds: number, sha256: 
         content.append(sourceDetails);
       }
       if (sourceContextType === "vba") {
-        const location = vbaSourceLocationsBySignature.get(findingSignature(finding));
-        if (location) content.append(createVbaSourceDetails(location));
+        sourceLocations.forEach((location) => content.append(createVbaSourceDetails(location)));
       }
       const matchingFinding = matchingFindings?.get(findingSignature(finding));
       if (matchingFinding) {
@@ -1484,8 +1478,10 @@ function renderResults(result: ScanResult, elapsedMilliseconds: number, sha256: 
               item.append(valueRow);
             }
             if (sourceContextType === "vba") {
-              const location = vbaSourceLocationsBySignature.get(sourceLocationSignature(finding));
-              if (location) item.append(createVbaSourceDetails(location));
+              const locations = vbaSourceLocationsBySignature.get(sourceLocationSignature(finding)) || [];
+              if (locations.length) {
+                locations.forEach((location) => item.append(createVbaSourceDetails(location)));
+              }
               else {
                 const note = document.createElement("div");
                 note.className = "finding-description";
