@@ -1292,8 +1292,11 @@ function renderResults(result: ScanResult, elapsedMilliseconds: number, sha256: 
   vbaSourceWarningIcon.hidden = vbaSourceFindings.length === 0;
   xlmWarningIcon.hidden = xlmFindings.length === 0;
   const findingSignature = ({ type, keyword }: Finding) => `${type}\u0000${keyword.trim().toLowerCase()}`;
+  const sourceLocationSignature = (finding: Finding) => finding.type === "Hex String"
+    ? `${findingSignature(finding)}\u0000${finding.description.trim().toLowerCase()}`
+    : findingSignature(finding);
   const vbaSourceLocationsBySignature = new Map(
-    result.vba_source_locations.map((location) => [findingSignature(location), location]),
+    result.vba_source_locations.map((location) => [sourceLocationSignature(location), location]),
   );
   const vbaSourceFindingSignatures = new Set(vbaSourceFindings.map(findingSignature));
   const vbaSourceFindingsBySignature = new Map(
@@ -1310,7 +1313,19 @@ function renderResults(result: ScanResult, elapsedMilliseconds: number, sha256: 
   pcodeFindingsGroup.open = !pcodeGroupShouldStartCollapsed;
   pcodeWarningIcon.hidden = !result.stomping && pcodeFindingsAreInVbaSource;
   pcodeMatchNote.hidden = !(result.stomping === false && pcodeFindings.length > 0 && pcodeFindingsAreInVbaSource);
-  const totalFindings = vbaSourceFindings.length + pcodeFindings.length + xlmFindings.length;
+  const countDisplayedFindings = (findings: Finding[]) => {
+    const hasHexGroup = findings.some((finding) =>
+      finding.type === "Hex String"
+      || (finding.type === "Suspicious" && finding.keyword.trim().toLowerCase() === "hex strings"),
+    );
+    return findings.filter((finding) =>
+      finding.type !== "Hex String"
+      && !(finding.type === "Suspicious" && finding.keyword.trim().toLowerCase() === "hex strings"),
+    ).length + Number(hasHexGroup);
+  };
+  const totalFindings = countDisplayedFindings(vbaSourceFindings)
+    + countDisplayedFindings(xlmFindings)
+    + (pcodeGroupShouldStartCollapsed ? 0 : countDisplayedFindings(pcodeFindings));
   findingCount.textContent = `${totalFindings} ${totalFindings === 1 ? "indicator" : "indicators"}`;
   const renderFindingGroup = (
     listElement: HTMLElement,
@@ -1324,14 +1339,23 @@ function renderResults(result: ScanResult, elapsedMilliseconds: number, sha256: 
       unmatchedFindingSignatures = null,
       sourceContextType = null,
     } = options;
-    countElement.textContent = `${findings.length}`;
-    if (findings.length === 0) {
+    const hexStringFindings = findings.filter((finding) => finding.type === "Hex String");
+    const hexSummaryFinding = findings.find((finding) =>
+      finding.type === "Suspicious" && finding.keyword.trim().toLowerCase() === "hex strings",
+    );
+    const regularFindings = findings.filter((finding) =>
+      finding.type !== "Hex String"
+      && !(finding.type === "Suspicious" && finding.keyword.trim().toLowerCase() === "hex strings"),
+    );
+    const hasHexGroup = hexStringFindings.length > 0 || hexSummaryFinding !== undefined;
+    countElement.textContent = `${regularFindings.length + Number(hasHexGroup)}`;
+    if (regularFindings.length === 0 && !hasHexGroup) {
       const empty = document.createElement("div");
       empty.className = "no-findings";
       empty.textContent = emptyMessage;
       listElement.replaceChildren(empty);
     } else {
-      listElement.replaceChildren(...findings.map((finding) => {
+      const rows = regularFindings.map((finding) => {
       const row = document.createElement("div");
       row.className = "finding-row";
       const type = document.createElement("div");
@@ -1417,7 +1441,72 @@ function renderResults(result: ScanResult, elapsedMilliseconds: number, sha256: 
       }
       row.append(type, content);
       return row;
-      }));
+      });
+      if (hasHexGroup) {
+        const row = document.createElement("div");
+        row.className = "finding-row hex-finding-row";
+        const type = document.createElement("div");
+        type.className = "finding-type";
+        type.textContent = "Hex strings";
+        const content = document.createElement("div");
+        content.className = "finding-content";
+        const keyword = document.createElement("div");
+        keyword.className = "finding-keyword";
+        keyword.textContent = hexStringFindings.length
+          ? `${hexStringFindings.length} encoded ${hexStringFindings.length === 1 ? "string" : "strings"} detected`
+          : "Hex-encoded strings detected";
+        const description = document.createElement("div");
+        description.className = "finding-description";
+        description.textContent = hexSummaryFinding?.description.replace(" (option --decode to see all)", "")
+          || "Review the encoded values and their decoded text.";
+        content.append(keyword, description);
+        if (hexStringFindings.length > 0) {
+          const details = document.createElement("details");
+          details.className = "hex-string-details";
+          const summary = document.createElement("summary");
+          summary.textContent = "Show encoded and decoded strings";
+          const list = document.createElement("div");
+          list.className = "hex-string-list";
+          hexStringFindings.forEach((finding) => {
+            const item = document.createElement("div");
+            item.className = "hex-string-item";
+            for (const [label, value] of [["Encoded", finding.description], ["Decoded", finding.keyword]]) {
+              const valueRow = document.createElement("div");
+              valueRow.className = "hex-string-value";
+              const valueLabel = document.createElement("span");
+              valueLabel.textContent = label;
+              const code = document.createElement("code");
+              code.textContent = label === "Decoded"
+                ? value.replace(/[\x00-\x1f\x7f-\x9f]/g, (character) =>
+                  `\\x${character.charCodeAt(0).toString(16).padStart(2, "0")}`)
+                : value;
+              valueRow.append(valueLabel, code);
+              item.append(valueRow);
+            }
+            if (sourceContextType === "vba") {
+              const location = vbaSourceLocationsBySignature.get(sourceLocationSignature(finding));
+              if (location) item.append(createVbaSourceDetails(location));
+              else {
+                const note = document.createElement("div");
+                note.className = "finding-description";
+                note.textContent = "No matching VBA source line; this value may come from embedded form data.";
+                item.append(note);
+              }
+            }
+            list.append(item);
+          });
+          details.append(summary, list);
+          content.append(details);
+        } else {
+          const note = document.createElement("div");
+          note.className = "finding-description";
+          note.textContent = "No printable decoded strings were available to list.";
+          content.append(note);
+        }
+        row.append(type, content);
+        rows.push(row);
+      }
+      listElement.replaceChildren(...rows);
     }
   };
   renderFindingGroup(

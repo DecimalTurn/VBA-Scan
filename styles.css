@@ -347,6 +347,15 @@ h2 { margin: 8px 0 0; font-family: var(--display); font-size: 18px; font-weight:
 .finding-content { min-width: 0; }
 .finding-keyword { overflow-wrap: anywhere; color: var(--ink); font-size: 11px; font-weight: 600; }
 .finding-description { margin-top: 3px; color: var(--text-subtle); font-size: 10px; line-height: 1.5; }
+.hex-string-details { margin-top: 8px; padding-left: 8px; border-left: 2px solid var(--line-faint); }
+.hex-string-details > summary { color: var(--text-muted); font-size: 10px; cursor: pointer; }
+.hex-string-details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.hex-string-list { display: grid; gap: 8px; margin-top: 8px; }
+.hex-string-item { min-width: 0; padding: 7px; border: 1px solid var(--line-faint); border-radius: 4px; }
+.hex-string-value { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 8px; align-items: start; }
+.hex-string-value + .hex-string-value { margin-top: 5px; }
+.hex-string-value > span { color: var(--text-subtle); font: 9px/1.5 var(--mono); text-transform: uppercase; }
+.hex-string-value > code { min-width: 0; color: var(--ink); font: 10px/1.5 var(--mono); overflow-wrap: anywhere; white-space: pre-wrap; }
 .pcode-unmatched { width: fit-content; margin-top: 6px; padding: 3px 6px; border-left: 2px solid var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger-text); font-size: 10px; font-weight: 650; }
 .pcode-source-lines { margin-top: 8px; padding-left: 8px; border-left: 2px solid var(--line-faint); }
 .pcode-source-lines > summary { color: var(--text-muted); font-size: 10px; cursor: pointer; }
