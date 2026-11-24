@@ -269,7 +269,7 @@ h2 { margin: 8px 0 0; font-family: var(--display); font-size: 18px; font-weight:
 }
 
 .results { margin-top: 27px; padding: 22px 24px 18px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface); }
-.drop-zone[hidden], .results[hidden], .result-summary[hidden], .selected-file[hidden] { display: none; }
+.drop-zone[hidden], .results[hidden], .result-summary[hidden], .selected-file[hidden], .no-suspicious-indicators[hidden] { display: none; }
 .analysis-time { padding-top: 4px; color: var(--text-subtle); font-size: 9px; }
 .document-identity { width: 100%; margin-top: 12px; border-collapse: collapse; color: var(--text-subtle); font-family: var(--mono); font-size: 10px; }
 .document-identity tr { height: 23px; }
@@ -382,6 +382,7 @@ h2 { margin: 8px 0 0; font-family: var(--display); font-size: 18px; font-weight:
 .finding-match > summary { color: var(--text-muted); font-size: 10px; cursor: pointer; }
 .finding-match-content { display: grid; gap: 2px; padding: 6px 0 2px; }
 .no-findings { display: flex; align-items: center; gap: 8px; padding: 14px 0; color: var(--text-muted); font-size: 11px; }
+.no-suspicious-indicators { margin-top: 20px; }
 .no-vba-indicator { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--good); }
 .disclaimer { margin: 15px 0 0; color: var(--text-subtle); font-size: 10px; line-height: 1.5; }
 

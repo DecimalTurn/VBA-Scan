@@ -118,6 +118,8 @@ const analysisProgress = requireElement("#analysis-progress");
 const debugLogButton = requireElement<HTMLButtonElement>("#download-debug-log");
 const resultsElement = requireElement("#results");
 const resultSummary = requireElement("#result-summary");
+const findingsSection = requireElement("#findings-section");
+const noSuspiciousIndicators = requireElement("#no-suspicious-indicators");
 const extractedSourceSection = requireElement("#extracted-source-section");
 const openVbaSourceButton = requireElement<HTMLButtonElement>("#open-vba-source");
 const openXlmSourceButton = requireElement<HTMLButtonElement>("#open-xlm-source");
@@ -1288,6 +1290,12 @@ function renderResults(result: ScanResult, elapsedMilliseconds: number, sha256: 
   const vbaSourceFindings = result.vba_source_findings || [];
   const pcodeFindings = result.pcode_findings || [];
   const xlmFindings = result.xlm_findings || [];
+  const hasSuspiciousIndicators = result.has_xlm || result.stomping === true
+    || vbaSourceFindings.length > 0
+    || pcodeFindings.length > 0
+    || xlmFindings.length > 0;
+  findingsSection.hidden = !hasSuspiciousIndicators;
+  noSuspiciousIndicators.hidden = hasSuspiciousIndicators;
   vbaSourceWarningIcon.hidden = vbaSourceFindings.length === 0;
   xlmWarningIcon.hidden = xlmFindings.length === 0;
   const findingSignature = ({ type, keyword }: Finding) => `${type}\u0000${keyword.trim().toLowerCase()}`;
