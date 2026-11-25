@@ -5,15 +5,6 @@ export interface SyntaxToken {
   kind: string | null;
 }
 
-export interface SyntaxHighlightBatchMetrics {
-  sourceChars: number;
-  tokenCount: number;
-  highlightedTokenCount: number;
-  tokenizeMs: number;
-  renderMs: number;
-  totalMs: number;
-}
-
 const keywordList = [
   "addressOf", "alias", "and", "as", "base", "begin", "byref", "byval",
   "call", "case", "class", "const", "declare", "dim", "do", "doevents",
@@ -135,19 +126,14 @@ export class StreamingSyntaxHighlighter {
     this.pendingNode = null;
   }
 
-  append(chunk: string, final = false): SyntaxHighlightBatchMetrics {
-    const startedAt = performance.now();
+  append(chunk: string, final = false): void {
     this.pendingNode?.remove();
     this.pendingNode = null;
     const text = this.pending + chunk;
     const lastNewline = final ? text.length : text.lastIndexOf("\n") + 1;
     const complete = lastNewline > 0 ? text.slice(0, lastNewline) : "";
     this.pending = lastNewline > 0 ? text.slice(lastNewline) : text;
-    const tokenizeStartedAt = performance.now();
     const tokens = complete ? tokenizeCode(complete, this.language) : [];
-    const tokenizeMs = performance.now() - tokenizeStartedAt;
-    const renderStartedAt = performance.now();
-    let highlightedTokenCount = 0;
     if (complete) {
       const fragment = document.createDocumentFragment();
       for (const token of tokens) {
@@ -155,7 +141,6 @@ export class StreamingSyntaxHighlighter {
           fragment.append(document.createTextNode(token.text));
           continue;
         }
-        highlightedTokenCount++;
         const span = document.createElement("span");
         span.className = `syntax-token syntax-${token.kind}`;
         span.textContent = token.text;
@@ -167,28 +152,12 @@ export class StreamingSyntaxHighlighter {
       this.pendingNode = document.createTextNode(this.pending);
       this.container.append(this.pendingNode);
     }
-    const renderMs = performance.now() - renderStartedAt;
-    return {
-      sourceChars: complete.length,
-      tokenCount: tokens.length,
-      highlightedTokenCount,
-      tokenizeMs,
-      renderMs,
-      totalMs: performance.now() - startedAt,
-    };
   }
 }
 
-export interface ViewportHighlightMetrics {
+export interface ViewportHighlightState {
   sourceChars: number;
   totalLines: number;
-  firstVisibleLine: number;
-  lastVisibleLine: number;
-  renderedLines: number;
-  tokenCount: number;
-  highlightedTokenCount: number;
-  tokenizeMs: number;
-  renderMs: number;
 }
 
 export class ViewportSyntaxHighlighter {
@@ -233,29 +202,32 @@ export class ViewportSyntaxHighlighter {
     }
   }
 
-  enable(source: string): ViewportHighlightMetrics {
+  enable(source: string): ViewportHighlightState {
     this.source = source;
     this.lines = this.splitLines(source);
     this.enabled = true;
     this.container.classList.add("syntax-virtual-output");
-    return this.renderVisible();
+    this.renderVisible();
+    return this.getState();
   }
 
-  appendSource(chunk: string): ViewportHighlightMetrics | null {
+  appendSource(chunk: string): ViewportHighlightState | null {
     if (!chunk) return null;
     this.source += chunk;
     const newLines = this.splitLines(chunk);
     if (this.lines.length === 0) this.lines = [""];
     this.lines[this.lines.length - 1] += newLines[0] ?? "";
     this.lines.push(...newLines.slice(1));
-    return this.enabled ? this.renderVisible() : null;
+    if (!this.enabled) return null;
+    this.renderVisible();
+    return this.getState();
   }
 
   private splitLines(source: string): string[] {
     return source.split("\n").map((line) => line.endsWith("\r") ? line.slice(0, -1) : line);
   }
 
-  private renderVisible(): ViewportHighlightMetrics {
+  private renderVisible(): void {
     const totalLines = this.lines.length;
     const lineHeight = Number.parseFloat(getComputedStyle(this.scrollContainer).lineHeight) || 16;
     const viewportHeight = Math.max(lineHeight, this.scrollContainer.clientHeight);
@@ -266,18 +238,12 @@ export class ViewportSyntaxHighlighter {
       totalLines,
       Math.max(start + 1, Math.ceil((scrollTop + viewportHeight) / lineHeight) + this.overscanLines),
     );
-    const tokenizeStartedAt = performance.now();
     const visibleTokens = this.lines.slice(start, end).map((line) => tokenizeCode(line, this.language));
-    const tokenizeMs = performance.now() - tokenizeStartedAt;
-    const renderStartedAt = performance.now();
     const fragment = document.createDocumentFragment();
     const topSpacer = this.createSpacer(start * lineHeight);
     if (topSpacer) fragment.append(topSpacer);
-    let tokenCount = 0;
-    let highlightedTokenCount = 0;
 
     visibleTokens.forEach((tokens, lineOffset) => {
-      tokenCount += tokens.length;
       const line = document.createElement("span");
       line.className = "syntax-virtual-line";
       line.dataset.line = String(start + lineOffset + 1);
@@ -286,7 +252,6 @@ export class ViewportSyntaxHighlighter {
           line.append(document.createTextNode(token.text));
           continue;
         }
-        highlightedTokenCount++;
         const span = document.createElement("span");
         span.className = `syntax-token syntax-${token.kind}`;
         span.textContent = token.text;
@@ -304,17 +269,12 @@ export class ViewportSyntaxHighlighter {
     this.container.dataset.visibleLineStart = String(start + 1);
     this.container.dataset.visibleLineEnd = String(end);
     this.container.dataset.renderedLines = String(end - start);
+  }
 
+  private getState(): ViewportHighlightState {
     return {
       sourceChars: this.source.length,
-      totalLines,
-      firstVisibleLine: start + 1,
-      lastVisibleLine: end,
-      renderedLines: end - start,
-      tokenCount,
-      highlightedTokenCount,
-      tokenizeMs,
-      renderMs: performance.now() - renderStartedAt,
+      totalLines: this.lines.length,
     };
   }
 

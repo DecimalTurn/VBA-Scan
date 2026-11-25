@@ -758,8 +758,8 @@ async function readTemporaryFileBytes(path: string, offset: number, size: number
   return requestWorker<Uint8Array>("read-file", { path, offset, size });
 }
 
-function waitForAnimationFrame(): Promise<number> {
-  return new Promise((resolve) => requestAnimationFrame(resolve));
+function waitForAnimationFrame(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }
 
 async function applySyntaxHighlightingInFrames(
@@ -767,76 +767,17 @@ async function applySyntaxHighlightingInFrames(
   output: HTMLElement,
   highlighter: StreamingSyntaxHighlighter,
   isCurrent: () => boolean,
-): Promise<{
-  sourceChars: number;
-  tokenCount: number;
-  highlightedTokenCount: number;
-  batchCount: number;
-  elapsedMs: number;
-  processingMs: number;
-  frameWaitMs: number;
-  postRenderMs: number;
-  maxFrameGapMs: number;
-  tokenizeMs: number;
-  renderMs: number;
-  maxBatchMs: number;
-  maxBatchChars: number;
-} | null> {
-  const startedAt = performance.now();
-  let tokenCount = 0;
-  let highlightedTokenCount = 0;
-  let batchCount = 0;
-  let processingMs = 0;
-  let maxFrameGapMs = 0;
-  let tokenizeMs = 0;
-  let renderMs = 0;
-  let maxBatchMs = 0;
-  let maxBatchChars = 0;
+): Promise<boolean> {
   output.replaceChildren();
   highlighter.reset();
   await waitForAnimationFrame();
-  let lastFrameTime = await waitForAnimationFrame();
-  const recordFrame = (frameTime: number) => {
-    maxFrameGapMs = Math.max(maxFrameGapMs, frameTime - lastFrameTime);
-    lastFrameTime = frameTime;
-  };
   for (let offset = 0; offset < source.length; offset += SYNTAX_HIGHLIGHT_CHUNK_SIZE) {
-    if (!isCurrent()) return null;
+    if (!isCurrent()) return false;
     const end = Math.min(offset + SYNTAX_HIGHLIGHT_CHUNK_SIZE, source.length);
-    const batch = highlighter.append(source.slice(offset, end), end === source.length);
-    batchCount++;
-    tokenCount += batch.tokenCount;
-    highlightedTokenCount += batch.highlightedTokenCount;
-    processingMs += batch.totalMs;
-    tokenizeMs += batch.tokenizeMs;
-    renderMs += batch.renderMs;
-    if (batch.totalMs > maxBatchMs) {
-      maxBatchMs = batch.totalMs;
-      maxBatchChars = batch.sourceChars;
-    }
-    recordFrame(await waitForAnimationFrame());
+    highlighter.append(source.slice(offset, end), end === source.length);
+    await waitForAnimationFrame();
   }
-  if (!isCurrent()) return null;
-  const postRenderStartedAt = performance.now();
-  recordFrame(await waitForAnimationFrame());
-  recordFrame(await waitForAnimationFrame());
-  const postRenderMs = performance.now() - postRenderStartedAt;
-  const elapsedMs = performance.now() - startedAt;
-  return {
-    sourceChars: source.length,
-    tokenCount,
-    highlightedTokenCount,
-    batchCount,
-    elapsedMs,
-    processingMs,
-    frameWaitMs: Math.max(0, elapsedMs - processingMs - postRenderMs),
-    postRenderMs,
-    maxFrameGapMs,
-    tokenizeMs,
-    renderMs,
-    maxBatchMs,
-    maxBatchChars,
-  };
+  return isCurrent();
 }
 
 function showSyntaxHighlightStatus(status: HTMLElement, message: string, loading = false) {
@@ -850,26 +791,6 @@ function showSyntaxHighlightStatus(status: HTMLElement, message: string, loading
   const text = document.createElement("span");
   text.textContent = message;
   status.append(text);
-}
-
-function logSyntaxHighlightMetrics(language: "vba" | "pcode", metrics: NonNullable<Awaited<ReturnType<typeof applySyntaxHighlightingInFrames>>>) {
-  const details = {
-    source_chars: metrics.sourceChars,
-    token_count: metrics.tokenCount,
-    highlighted_token_count: metrics.highlightedTokenCount,
-    batch_count: metrics.batchCount,
-    elapsed_ms: Number(metrics.elapsedMs.toFixed(1)),
-    processing_ms: Number(metrics.processingMs.toFixed(1)),
-    frame_wait_ms: Number(metrics.frameWaitMs.toFixed(1)),
-    post_render_ms: Number(metrics.postRenderMs.toFixed(1)),
-    max_frame_gap_ms: Number(metrics.maxFrameGapMs.toFixed(1)),
-    tokenize_ms: Number(metrics.tokenizeMs.toFixed(1)),
-    render_ms: Number(metrics.renderMs.toFixed(1)),
-    max_batch_ms: Number(metrics.maxBatchMs.toFixed(1)),
-    max_batch_chars: metrics.maxBatchChars,
-  };
-  console.info(`[VBA Scan] ${language} syntax highlighting`, details);
-  logDebug("syntax_highlight_complete", { language, ...details });
 }
 
 function resetVbaSyntaxHighlighting() {
@@ -928,20 +849,16 @@ async function enablePcodeSyntaxHighlighting() {
     }
     if (generation !== pcodeSyntaxHighlightGeneration) return;
     source = pcodeOutput.textContent ?? "";
-    const metrics = await applySyntaxHighlightingInFrames(
+    const applied = await applySyntaxHighlightingInFrames(
       source,
       pcodeOutput,
       pcodeHighlighter,
       () => generation === pcodeSyntaxHighlightGeneration,
     );
-    if (metrics) {
+    if (applied) {
       pcodeHighlighting = true;
       pcodeHighlightButton.textContent = "Syntax highlighting enabled";
-      showSyntaxHighlightStatus(
-        pcodeHighlightStatus,
-        `${source.length.toLocaleString()} chars · ${metrics.elapsedMs.toFixed(0)} ms total · regex ${metrics.tokenizeMs.toFixed(1)} ms · DOM ${metrics.renderMs.toFixed(1)} ms · frame wait ${metrics.frameWaitMs.toFixed(1)} ms · post-render ${metrics.postRenderMs.toFixed(1)} ms · max frame gap ${metrics.maxFrameGapMs.toFixed(1)} ms`,
-      );
-      logSyntaxHighlightMetrics("pcode", metrics);
+      showSyntaxHighlightStatus(pcodeHighlightStatus, "Syntax highlighting enabled");
     }
   } catch (error) {
     logDebug("pcode_syntax_highlight_error", getErrorDetails(error));
