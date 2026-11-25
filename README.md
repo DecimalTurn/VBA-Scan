@@ -64,4 +64,3 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 The oletools package remains under its own license. See the [oletools repository](https://github.com/decalage2/oletools) for more information.
 
 The VBA-LanguageServer grammar attribution and MIT license are included in [assets/VBA-LanguageServer.LICENSE.txt](assets/VBA-LanguageServer.LICENSE.txt).
-
