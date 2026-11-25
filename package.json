@@ -4,9 +4,11 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "npm run typecheck && python3 build-oletools-asset.py && rolldown -c && node scripts/copy-static.mjs"
+    "build": "npm run typecheck && python3 build-oletools-asset.py && rolldown -c && node scripts/copy-static.mjs",
+    "test:browser": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "rolldown": "^1.3.3",
     "typescript": "^7.0.2"
   }

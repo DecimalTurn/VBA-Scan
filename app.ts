@@ -1,7 +1,10 @@
+import { renderHighlightedCode, StreamingSyntaxHighlighter } from "./syntax-highlighter.ts";
+
 const PYODIDE_VERSION = "0.27.7";
 const OLETOOLS_VERSION = "0.60.3";
 const PCODE_CHUNK_SIZE = 16_384;
 const PCODE_PREVIEW_LIMIT = 524_288;
+const SYNTAX_HIGHLIGHT_CHUNK_SIZE = 8_192;
 const PCODE_DOWNLOAD_CHUNK_SIZE = 262_144;
 const PCODE_LARGE_DOWNLOAD_WARNING_BYTES = 10 * 1024 * 1024;
 const VBA_SOURCE_CHUNK_SIZE = 16_384;
@@ -133,6 +136,8 @@ const vbaSourceMatchLocation = requireElement("#vba-source-match-location");
 const vbaSourceOutput = requireElement("#vba-source-output");
 const vbaSourceControls = requireElement("#vba-source-controls");
 const vbaSourceProgress = requireElement("#vba-source-progress");
+const vbaSourceHighlightButton = requireElement<HTMLButtonElement>("#vba-source-highlight");
+const vbaSourceHighlightStatus = requireElement("#vba-source-highlight-status");
 const vbaSourceMoreButton = requireElement<HTMLButtonElement>("#vba-source-more");
 const vbaSourceLoadAboveButton = requireElement<HTMLButtonElement>("#vba-source-load-above");
 const vbaSourceLoadBelowButton = requireElement<HTMLButtonElement>("#vba-source-load-below");
@@ -153,6 +158,8 @@ const pcodeSection = requireElement("#pcode-section");
 const pcodeOutput = requireElement("#pcode-output");
 const pcodeControls = requireElement("#pcode-controls");
 const pcodeProgress = requireElement("#pcode-progress");
+const pcodeHighlightButton = requireElement<HTMLButtonElement>("#pcode-highlight");
+const pcodeHighlightStatus = requireElement("#pcode-highlight-status");
 const pcodeMoreButton = requireElement<HTMLButtonElement>("#pcode-more");
 const pcodeDownloadButton = requireElement<HTMLButtonElement>("#pcode-download");
 const pcodeLargeDownloadWarning = requireElement("#pcode-large-download-warning");
@@ -172,6 +179,8 @@ const documentFilename = requireElement("#document-filename");
 const documentCodepage = requireElement("#document-codepage");
 const copyHashButton = requireElement<HTMLButtonElement>("#copy-hash-button");
 const copyStatus = requireElement("#copy-status");
+const vbaSourceHighlighter = new StreamingSyntaxHighlighter(vbaSourceOutput, "vba");
+const pcodeHighlighter = new StreamingSyntaxHighlighter(pcodeOutput, "pcode");
 
 let selectedFile: File | null = null;
 const analysisWorker = new Worker(new URL("./analysis-worker.js", import.meta.url), { type: "module" });
@@ -187,6 +196,9 @@ let vbaSourceModuleCount = 0;
 let vbaSourceArchivePath = "";
 let vbaSourceArchiveSize = 0;
 let vbaSourceLoading = false;
+let vbaSourceHighlighting = false;
+let vbaSourceHighlightingInProgress = false;
+let vbaSyntaxHighlightGeneration = 0;
 let vbaSourceDownloadInProgress = false;
 let vbaSourceDecoder = new TextDecoder("utf-8");
 let vbaSourceMatchContext: VbaSourceContext | null = null;
@@ -204,6 +216,9 @@ let pcodeOffset = 0;
 let pcodePath = "";
 let pcodeSize = 0;
 let pcodeLoading = false;
+let pcodeHighlighting = false;
+let pcodeHighlightingInProgress = false;
+let pcodeSyntaxHighlightGeneration = 0;
 let pcodeDownloadInProgress = false;
 let pcodeDecoder = new TextDecoder("utf-8");
 const pcodeSourceContextCache = new Map<string, Promise<PcodeSourceContext | null>>();
@@ -511,9 +526,9 @@ function renderVbaSourceContext(container: HTMLElement, context: VbaSourceContex
   for (const line of context.lines) {
     const sourceLine = document.createElement("span");
     sourceLine.className = line.matched ? "vba-source-context-line is-match" : "vba-source-context-line";
-    sourceLine.textContent = line.number == null
-      ? line.text
-      : `${String(line.number).padStart(4, " ")}  ${line.text}`;
+    const prefix = line.number == null ? "" : `${String(line.number).padStart(4, " ")}  `;
+    renderHighlightedCode(sourceLine, line.text, "vba");
+    sourceLine.prepend(document.createTextNode(prefix));
     code.append(sourceLine, document.createTextNode("\n"));
   }
   container.replaceChildren(module, code);
@@ -524,7 +539,7 @@ function renderVbaSourceWindow(context: VbaSourceContext) {
   for (const line of context.lines) {
     const sourceLine = document.createElement("span");
     sourceLine.className = line.matched ? "vba-source-context-line is-match" : "vba-source-context-line";
-    sourceLine.textContent = line.text;
+    renderHighlightedCode(sourceLine, line.text, "vba");
     nodes.push(sourceLine, document.createTextNode("\n"));
   }
   vbaSourceOutput.replaceChildren(...nodes);
@@ -681,6 +696,8 @@ function openVbaSourceMatch(context: VbaSourceContext) {
   vbaSourceWindowReadOffset = context.endByteOffset;
   vbaSourceWindowPendingBytes = new Uint8Array();
   vbaSourceOffset = 0;
+  resetVbaSyntaxHighlighting();
+  vbaSourceHighlightButton.hidden = true;
   vbaSourceOutput.replaceChildren();
   vbaSourceMatchLocation.textContent = `${context.moduleName} · line ${context.lineNumber}`;
   vbaSourceMatchLocation.hidden = false;
@@ -741,8 +758,237 @@ async function readTemporaryFileBytes(path: string, offset: number, size: number
   return requestWorker<Uint8Array>("read-file", { path, offset, size });
 }
 
+function waitForAnimationFrame(): Promise<number> {
+  return new Promise((resolve) => requestAnimationFrame(resolve));
+}
+
+async function applySyntaxHighlightingInFrames(
+  source: string,
+  output: HTMLElement,
+  highlighter: StreamingSyntaxHighlighter,
+  isCurrent: () => boolean,
+): Promise<{
+  sourceChars: number;
+  tokenCount: number;
+  highlightedTokenCount: number;
+  batchCount: number;
+  elapsedMs: number;
+  processingMs: number;
+  frameWaitMs: number;
+  postRenderMs: number;
+  maxFrameGapMs: number;
+  tokenizeMs: number;
+  renderMs: number;
+  maxBatchMs: number;
+  maxBatchChars: number;
+} | null> {
+  const startedAt = performance.now();
+  let tokenCount = 0;
+  let highlightedTokenCount = 0;
+  let batchCount = 0;
+  let processingMs = 0;
+  let maxFrameGapMs = 0;
+  let tokenizeMs = 0;
+  let renderMs = 0;
+  let maxBatchMs = 0;
+  let maxBatchChars = 0;
+  output.replaceChildren();
+  highlighter.reset();
+  await waitForAnimationFrame();
+  let lastFrameTime = await waitForAnimationFrame();
+  const recordFrame = (frameTime: number) => {
+    maxFrameGapMs = Math.max(maxFrameGapMs, frameTime - lastFrameTime);
+    lastFrameTime = frameTime;
+  };
+  for (let offset = 0; offset < source.length; offset += SYNTAX_HIGHLIGHT_CHUNK_SIZE) {
+    if (!isCurrent()) return null;
+    const end = Math.min(offset + SYNTAX_HIGHLIGHT_CHUNK_SIZE, source.length);
+    const batch = highlighter.append(source.slice(offset, end), end === source.length);
+    batchCount++;
+    tokenCount += batch.tokenCount;
+    highlightedTokenCount += batch.highlightedTokenCount;
+    processingMs += batch.totalMs;
+    tokenizeMs += batch.tokenizeMs;
+    renderMs += batch.renderMs;
+    if (batch.totalMs > maxBatchMs) {
+      maxBatchMs = batch.totalMs;
+      maxBatchChars = batch.sourceChars;
+    }
+    recordFrame(await waitForAnimationFrame());
+  }
+  if (!isCurrent()) return null;
+  const postRenderStartedAt = performance.now();
+  recordFrame(await waitForAnimationFrame());
+  recordFrame(await waitForAnimationFrame());
+  const postRenderMs = performance.now() - postRenderStartedAt;
+  const elapsedMs = performance.now() - startedAt;
+  return {
+    sourceChars: source.length,
+    tokenCount,
+    highlightedTokenCount,
+    batchCount,
+    elapsedMs,
+    processingMs,
+    frameWaitMs: Math.max(0, elapsedMs - processingMs - postRenderMs),
+    postRenderMs,
+    maxFrameGapMs,
+    tokenizeMs,
+    renderMs,
+    maxBatchMs,
+    maxBatchChars,
+  };
+}
+
+function showSyntaxHighlightStatus(status: HTMLElement, message: string, loading = false) {
+  status.replaceChildren();
+  if (loading) {
+    const spinner = document.createElement("span");
+    spinner.className = "syntax-highlight-spinner";
+    spinner.setAttribute("aria-hidden", "true");
+    status.append(spinner);
+  }
+  const text = document.createElement("span");
+  text.textContent = message;
+  status.append(text);
+}
+
+function logSyntaxHighlightMetrics(language: "vba" | "pcode", metrics: NonNullable<Awaited<ReturnType<typeof applySyntaxHighlightingInFrames>>>) {
+  const details = {
+    source_chars: metrics.sourceChars,
+    token_count: metrics.tokenCount,
+    highlighted_token_count: metrics.highlightedTokenCount,
+    batch_count: metrics.batchCount,
+    elapsed_ms: Number(metrics.elapsedMs.toFixed(1)),
+    processing_ms: Number(metrics.processingMs.toFixed(1)),
+    frame_wait_ms: Number(metrics.frameWaitMs.toFixed(1)),
+    post_render_ms: Number(metrics.postRenderMs.toFixed(1)),
+    max_frame_gap_ms: Number(metrics.maxFrameGapMs.toFixed(1)),
+    tokenize_ms: Number(metrics.tokenizeMs.toFixed(1)),
+    render_ms: Number(metrics.renderMs.toFixed(1)),
+    max_batch_ms: Number(metrics.maxBatchMs.toFixed(1)),
+    max_batch_chars: metrics.maxBatchChars,
+  };
+  console.info(`[VBA Scan] ${language} syntax highlighting`, details);
+  logDebug("syntax_highlight_complete", { language, ...details });
+}
+
+function resetVbaSyntaxHighlighting() {
+  vbaSyntaxHighlightGeneration++;
+  vbaSourceHighlighting = false;
+  vbaSourceHighlightingInProgress = false;
+  vbaSourceHighlightButton.disabled = false;
+  vbaSourceHighlightButton.textContent = "Enable syntax highlighting";
+  vbaSourceHighlightButton.hidden = false;
+  vbaSourceHighlightStatus.hidden = true;
+  vbaSourceMoreButton.disabled = false;
+  vbaSourceHighlighter.reset();
+}
+
+function resetPcodeSyntaxHighlighting() {
+  pcodeSyntaxHighlightGeneration++;
+  pcodeHighlighting = false;
+  pcodeHighlightingInProgress = false;
+  pcodeHighlightButton.disabled = false;
+  pcodeHighlightButton.textContent = "Enable syntax highlighting";
+  pcodeHighlightStatus.hidden = true;
+  pcodeMoreButton.disabled = false;
+  pcodeHighlighter.reset();
+}
+
+async function enableVbaSyntaxHighlighting() {
+  if (vbaSourceHighlighting || vbaSourceHighlightingInProgress) return;
+  vbaSourceHighlightingInProgress = true;
+  const generation = ++vbaSyntaxHighlightGeneration;
+  let source = "";
+  vbaSourceHighlightButton.disabled = true;
+  vbaSourceHighlightStatus.hidden = false;
+  showSyntaxHighlightStatus(vbaSourceHighlightStatus, "Applying syntax highlighting…", true);
+  vbaSourceMoreButton.disabled = true;
+  try {
+    while (vbaSourceLoading && generation === vbaSyntaxHighlightGeneration) {
+      await waitForAnimationFrame();
+    }
+    if (generation !== vbaSyntaxHighlightGeneration) return;
+    source = vbaSourceOutput.textContent ?? "";
+    const metrics = await applySyntaxHighlightingInFrames(
+      source,
+      vbaSourceOutput,
+      vbaSourceHighlighter,
+      () => generation === vbaSyntaxHighlightGeneration,
+    );
+    if (metrics) {
+      vbaSourceHighlighting = true;
+      vbaSourceHighlightButton.textContent = "Syntax highlighting enabled";
+      showSyntaxHighlightStatus(
+        vbaSourceHighlightStatus,
+        `${source.length.toLocaleString()} chars · ${metrics.elapsedMs.toFixed(0)} ms total · regex ${metrics.tokenizeMs.toFixed(1)} ms · DOM ${metrics.renderMs.toFixed(1)} ms · frame wait ${metrics.frameWaitMs.toFixed(1)} ms · post-render ${metrics.postRenderMs.toFixed(1)} ms · max frame gap ${metrics.maxFrameGapMs.toFixed(1)} ms`,
+      );
+      logSyntaxHighlightMetrics("vba", metrics);
+    }
+  } catch (error) {
+    logDebug("vba_syntax_highlight_error", getErrorDetails(error));
+    if (generation === vbaSyntaxHighlightGeneration) {
+      vbaSourceOutput.textContent = source;
+      vbaSourceHighlighter.reset();
+    }
+  } finally {
+    if (generation === vbaSyntaxHighlightGeneration) {
+      vbaSourceHighlightingInProgress = false;
+      vbaSourceHighlightStatus.hidden = !vbaSourceHighlighting;
+      vbaSourceHighlightButton.disabled = vbaSourceHighlighting;
+      vbaSourceMoreButton.disabled = false;
+    }
+  }
+}
+
+async function enablePcodeSyntaxHighlighting() {
+  if (pcodeHighlighting || pcodeHighlightingInProgress) return;
+  pcodeHighlightingInProgress = true;
+  const generation = ++pcodeSyntaxHighlightGeneration;
+  let source = "";
+  pcodeHighlightButton.disabled = true;
+  pcodeHighlightStatus.hidden = false;
+  showSyntaxHighlightStatus(pcodeHighlightStatus, "Applying syntax highlighting…", true);
+  pcodeMoreButton.disabled = true;
+  try {
+    while (pcodeLoading && generation === pcodeSyntaxHighlightGeneration) {
+      await waitForAnimationFrame();
+    }
+    if (generation !== pcodeSyntaxHighlightGeneration) return;
+    source = pcodeOutput.textContent ?? "";
+    const metrics = await applySyntaxHighlightingInFrames(
+      source,
+      pcodeOutput,
+      pcodeHighlighter,
+      () => generation === pcodeSyntaxHighlightGeneration,
+    );
+    if (metrics) {
+      pcodeHighlighting = true;
+      pcodeHighlightButton.textContent = "Syntax highlighting enabled";
+      showSyntaxHighlightStatus(
+        pcodeHighlightStatus,
+        `${source.length.toLocaleString()} chars · ${metrics.elapsedMs.toFixed(0)} ms total · regex ${metrics.tokenizeMs.toFixed(1)} ms · DOM ${metrics.renderMs.toFixed(1)} ms · frame wait ${metrics.frameWaitMs.toFixed(1)} ms · post-render ${metrics.postRenderMs.toFixed(1)} ms · max frame gap ${metrics.maxFrameGapMs.toFixed(1)} ms`,
+      );
+      logSyntaxHighlightMetrics("pcode", metrics);
+    }
+  } catch (error) {
+    logDebug("pcode_syntax_highlight_error", getErrorDetails(error));
+    if (generation === pcodeSyntaxHighlightGeneration) {
+      pcodeOutput.textContent = source;
+      pcodeHighlighter.reset();
+    }
+  } finally {
+    if (generation === pcodeSyntaxHighlightGeneration) {
+      pcodeHighlightingInProgress = false;
+      pcodeHighlightStatus.hidden = !pcodeHighlighting;
+      pcodeHighlightButton.disabled = pcodeHighlighting;
+      pcodeMoreButton.disabled = false;
+    }
+  }
+}
+
 async function appendVbaSourceChunk() {
-  if (vbaSourceLoading || vbaSourceOffset >= Math.min(vbaSourceSize, VBA_SOURCE_PREVIEW_LIMIT)) return;
+  if (vbaSourceLoading || vbaSourceHighlightingInProgress || vbaSourceOffset >= Math.min(vbaSourceSize, VBA_SOURCE_PREVIEW_LIMIT)) return;
   vbaSourceLoading = true;
   vbaSourceMoreButton.disabled = true;
   const startedAt = performance.now();
@@ -753,9 +999,13 @@ async function appendVbaSourceChunk() {
       VBA_SOURCE_CHUNK_SIZE,
     );
     vbaSourceOffset += bytes.length;
-    vbaSourceOutput.append(
-      document.createTextNode(vbaSourceDecoder.decode(bytes, { stream: vbaSourceOffset < vbaSourceSize })),
-    );
+    const previewComplete = vbaSourceOffset >= Math.min(vbaSourceSize, VBA_SOURCE_PREVIEW_LIMIT);
+    const chunk = vbaSourceDecoder.decode(bytes, { stream: !previewComplete });
+    if (vbaSourceHighlighting) {
+      vbaSourceHighlighter.append(chunk, previewComplete);
+    } else {
+      vbaSourceOutput.append(document.createTextNode(chunk));
+    }
     vbaSourceProgress.textContent =
       `Preview: ${vbaSourceOffset.toLocaleString()} of ${vbaSourceSize.toLocaleString()} bytes · ${vbaSourceModuleCount.toLocaleString()} modules`;
     vbaSourceMoreButton.hidden = vbaSourceOffset >= Math.min(vbaSourceSize, VBA_SOURCE_PREVIEW_LIMIT);
@@ -764,7 +1014,7 @@ async function appendVbaSourceChunk() {
     logDebug("vba_source_preview_error", getErrorDetails(error));
     setStatus(`Could not load VBA source preview: ${getErrorMessage(error)}`, true);
   } finally {
-    vbaSourceMoreButton.disabled = false;
+    vbaSourceMoreButton.disabled = vbaSourceHighlightingInProgress;
     logDuration("VBA source preview chunk", startedAt);
     vbaSourceLoading = false;
   }
@@ -779,14 +1029,20 @@ async function loadVbaSourcePreview() {
 }
 
 async function appendPcodeChunk() {
-  if (pcodeLoading || pcodeOffset >= Math.min(pcodeSize, PCODE_PREVIEW_LIMIT)) return;
+  if (pcodeLoading || pcodeHighlightingInProgress || pcodeOffset >= Math.min(pcodeSize, PCODE_PREVIEW_LIMIT)) return;
   pcodeLoading = true;
   pcodeMoreButton.disabled = true;
   const startedAt = performance.now();
   try {
     const bytes = await readPcodeBytes(pcodeOffset, PCODE_CHUNK_SIZE);
     pcodeOffset += bytes.length;
-    pcodeOutput.append(document.createTextNode(pcodeDecoder.decode(bytes, { stream: pcodeOffset < pcodeSize })));
+    const previewComplete = pcodeOffset >= Math.min(pcodeSize, PCODE_PREVIEW_LIMIT);
+    const chunk = pcodeDecoder.decode(bytes, { stream: !previewComplete });
+    if (pcodeHighlighting) {
+      pcodeHighlighter.append(chunk, previewComplete);
+    } else {
+      pcodeOutput.append(document.createTextNode(chunk));
+    }
     pcodeProgress.textContent = `Preview: ${pcodeOffset.toLocaleString()} of ${pcodeSize.toLocaleString()} bytes`;
     pcodeMoreButton.hidden = pcodeOffset >= Math.min(pcodeSize, PCODE_PREVIEW_LIMIT);
     logDebug("pcode_preview_chunk", { bytes: bytes.length, total_bytes: pcodeSize });
@@ -794,7 +1050,7 @@ async function appendPcodeChunk() {
     logDebug("pcode_preview_error", getErrorDetails(error));
     setStatus(`Could not load p-code preview: ${getErrorMessage(error)}`, true);
   } finally {
-    pcodeMoreButton.disabled = false;
+    pcodeMoreButton.disabled = pcodeHighlightingInProgress;
     logDuration("P-code preview chunk", startedAt);
     pcodeLoading = false;
   }
@@ -834,6 +1090,7 @@ function openSourcePreview(sourceType: "vba" | "xlm" | "pcode") {
     vbaSourceMatchContext = null;
     vbaSourceOffset = 0;
     vbaSourceDecoder = new TextDecoder("utf-8");
+    resetVbaSyntaxHighlighting();
     vbaSourceOutput.replaceChildren();
     vbaSourceOutput.classList.remove("vba-match-window");
     vbaSourceMatchLocation.hidden = true;
@@ -1213,6 +1470,7 @@ function renderResults(result: ScanResult, elapsedMilliseconds: number, sha256: 
   vbaSourceLargeDownloadWarning.hidden =
     Math.max(vbaSourceArchiveSize, vbaSourceSize) <= VBA_SOURCE_LARGE_DOWNLOAD_WARNING_BYTES;
   vbaSourceDecoder = new TextDecoder("utf-8");
+  resetVbaSyntaxHighlighting();
   vbaSourceOutput.replaceChildren();
   vbaSourceOutput.classList.toggle("code-unavailable", !vbaSourceSize);
   if (vbaSourceSize) {
@@ -1254,6 +1512,7 @@ function renderResults(result: ScanResult, elapsedMilliseconds: number, sha256: 
   pcodeSize = result.pcode_size || 0;
   pcodeLargeDownloadWarning.hidden = pcodeSize <= PCODE_LARGE_DOWNLOAD_WARNING_BYTES;
   pcodeDecoder = new TextDecoder("utf-8");
+  resetPcodeSyntaxHighlighting();
   pcodeOutput.replaceChildren();
   pcodeOutput.classList.toggle("code-unavailable", !pcodeSize);
   if (pcodeSize) {
@@ -1403,7 +1662,7 @@ function renderResults(result: ScanResult, elapsedMilliseconds: number, sha256: 
                 sourceContent.append(moduleStream);
               }
               const sourceCode = document.createElement("pre");
-              sourceCode.textContent = sourceContext.text;
+              renderHighlightedCode(sourceCode, sourceContext.text, "pcode");
               sourceContent.append(sourceCode);
             } else {
               sourceSummary.textContent = "P-code source block (no direct match)";
@@ -1599,6 +1858,8 @@ removeFileButton.addEventListener("click", clearSelectedFile);
 openVbaSourceButton.addEventListener("click", () => openSourcePreview("vba"));
 openXlmSourceButton.addEventListener("click", () => openSourcePreview("xlm"));
 openPcodeSourceButton.addEventListener("click", () => openSourcePreview("pcode"));
+vbaSourceHighlightButton.addEventListener("click", enableVbaSyntaxHighlighting);
+pcodeHighlightButton.addEventListener("click", enablePcodeSyntaxHighlighting);
 sourceDialogCloseButton.addEventListener("click", () => sourceCodeDialog.close());
 sourceCodeDialog.addEventListener("click", (event) => {
   if (event.target === sourceCodeDialog) sourceCodeDialog.close();

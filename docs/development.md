@@ -52,7 +52,19 @@ git diff --check
 git status --short
 ```
 
-## 5. Commit changes
+## 5. Check syntax-highlighting responsiveness
+
+Install Playwright's Chromium browser once, build the app, and run the large-workbook browser check:
+
+```sh
+npx playwright install chromium
+npm run build
+npm run test:browser
+```
+
+The test uploads the 13 Packs sample workbook, enables VBA highlighting, reports animation-frame gaps and long tasks, and fails if either exceeds two seconds. Its timings are environment-dependent; use a Windows performance trace to investigate stalls that do not reproduce in this browser test.
+
+## 6. Commit changes
 
 Use conventional commit messages that describe the behavior change. When changing the nested oletools repository:
 
