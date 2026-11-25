@@ -136,7 +136,6 @@ const vbaSourceMatchLocation = requireElement("#vba-source-match-location");
 const vbaSourceOutput = requireElement("#vba-source-output");
 const vbaSourceControls = requireElement("#vba-source-controls");
 const vbaSourceProgress = requireElement("#vba-source-progress");
-const vbaSourceHighlightButton = requireElement<HTMLButtonElement>("#vba-source-highlight");
 const vbaSourceHighlightStatus = requireElement("#vba-source-highlight-status");
 const vbaSourceMoreButton = requireElement<HTMLButtonElement>("#vba-source-more");
 const vbaSourceLoadAboveButton = requireElement<HTMLButtonElement>("#vba-source-load-above");
@@ -201,8 +200,6 @@ let vbaSourceArchivePath = "";
 let vbaSourceArchiveSize = 0;
 let vbaSourceLoading = false;
 let vbaSourceHighlighting = false;
-let vbaSourceHighlightingInProgress = false;
-let vbaSyntaxHighlightGeneration = 0;
 let vbaSourceDownloadInProgress = false;
 let vbaSourceDecoder = new TextDecoder("utf-8");
 let vbaSourceMatchContext: VbaSourceContext | null = null;
@@ -701,7 +698,6 @@ function openVbaSourceMatch(context: VbaSourceContext) {
   vbaSourceWindowPendingBytes = new Uint8Array();
   vbaSourceOffset = 0;
   resetVbaSyntaxHighlighting();
-  vbaSourceHighlightButton.hidden = true;
   vbaSourceOutput.replaceChildren();
   vbaSourceMatchLocation.textContent = `${context.moduleName} · line ${context.lineNumber}`;
   vbaSourceMatchLocation.hidden = false;
@@ -877,12 +873,7 @@ function logSyntaxHighlightMetrics(language: "vba" | "pcode", metrics: NonNullab
 }
 
 function resetVbaSyntaxHighlighting() {
-  vbaSyntaxHighlightGeneration++;
   vbaSourceHighlighting = false;
-  vbaSourceHighlightingInProgress = false;
-  vbaSourceHighlightButton.disabled = false;
-  vbaSourceHighlightButton.textContent = "Enable syntax highlighting";
-  vbaSourceHighlightButton.hidden = false;
   vbaSourceHighlightStatus.hidden = true;
   vbaSourceMoreButton.disabled = false;
   vbaSourceHighlighter.reset();
@@ -899,56 +890,26 @@ function resetPcodeSyntaxHighlighting() {
   pcodeHighlighter.reset();
 }
 
-async function enableVbaSyntaxHighlighting() {
-  if (vbaSourceHighlighting || vbaSourceHighlightingInProgress) return;
-  vbaSourceHighlightingInProgress = true;
-  const generation = ++vbaSyntaxHighlightGeneration;
-  let source = "";
-  vbaSourceHighlightButton.disabled = true;
+function updateVbaSyntaxHighlightStatus(metrics: ReturnType<ViewportSyntaxHighlighter["enable"]>) {
   vbaSourceHighlightStatus.hidden = false;
-  showSyntaxHighlightStatus(vbaSourceHighlightStatus, "Applying syntax highlighting…", true);
-  vbaSourceMoreButton.disabled = true;
+  showSyntaxHighlightStatus(
+    vbaSourceHighlightStatus,
+    metrics.sourceChars
+      ? `Viewport highlighting active · ${metrics.sourceChars.toLocaleString()} chars · ${metrics.totalLines.toLocaleString()} lines`
+      : "Viewport highlighting active · waiting for source",
+  );
+}
+
+function startVbaSyntaxHighlighting() {
+  if (vbaSourceHighlighting) return;
   try {
-    while (vbaSourceLoading && generation === vbaSyntaxHighlightGeneration) {
-      await waitForAnimationFrame();
-    }
-    if (generation !== vbaSyntaxHighlightGeneration) return;
-    source = vbaSourceOutput.textContent ?? "";
-    await waitForAnimationFrame();
-    if (generation !== vbaSyntaxHighlightGeneration) return;
-    const metrics = vbaSourceHighlighter.enable(source);
+    const metrics = vbaSourceHighlighter.enable(vbaSourceOutput.textContent ?? "");
     vbaSourceHighlighting = true;
-    vbaSourceHighlightButton.textContent = "Syntax highlighting enabled";
-    showSyntaxHighlightStatus(
-      vbaSourceHighlightStatus,
-      `Highlighting lines ${metrics.firstVisibleLine.toLocaleString()}–${metrics.lastVisibleLine.toLocaleString()} of ${metrics.totalLines.toLocaleString()} as you scroll · ${metrics.tokenizeMs.toFixed(1)} ms tokenize · ${metrics.renderMs.toFixed(1)} ms render`,
-    );
-    const details = {
-      source_chars: metrics.sourceChars,
-      total_lines: metrics.totalLines,
-      first_visible_line: metrics.firstVisibleLine,
-      last_visible_line: metrics.lastVisibleLine,
-      rendered_lines: metrics.renderedLines,
-      token_count: metrics.tokenCount,
-      highlighted_token_count: metrics.highlightedTokenCount,
-      tokenize_ms: Number(metrics.tokenizeMs.toFixed(1)),
-      render_ms: Number(metrics.renderMs.toFixed(1)),
-    };
-    console.info("[VBA Scan] vba syntax highlight viewport", details);
-    logDebug("syntax_highlight_viewport", details);
+    updateVbaSyntaxHighlightStatus(metrics);
   } catch (error) {
     logDebug("vba_syntax_highlight_error", getErrorDetails(error));
-    if (generation === vbaSyntaxHighlightGeneration) {
-      vbaSourceOutput.textContent = source;
-      vbaSourceHighlighter.reset();
-    }
-  } finally {
-    if (generation === vbaSyntaxHighlightGeneration) {
-      vbaSourceHighlightingInProgress = false;
-      vbaSourceHighlightStatus.hidden = !vbaSourceHighlighting;
-      vbaSourceHighlightButton.disabled = vbaSourceHighlighting;
-      vbaSourceMoreButton.disabled = false;
-    }
+    vbaSourceHighlighting = false;
+    vbaSourceHighlighter.reset();
   }
 }
 
@@ -999,7 +960,7 @@ async function enablePcodeSyntaxHighlighting() {
 }
 
 async function appendVbaSourceChunk() {
-  if (vbaSourceLoading || vbaSourceHighlightingInProgress || vbaSourceOffset >= Math.min(vbaSourceSize, VBA_SOURCE_PREVIEW_LIMIT)) return;
+  if (vbaSourceLoading || vbaSourceOffset >= Math.min(vbaSourceSize, VBA_SOURCE_PREVIEW_LIMIT)) return;
   vbaSourceLoading = true;
   vbaSourceMoreButton.disabled = true;
   const startedAt = performance.now();
@@ -1013,7 +974,9 @@ async function appendVbaSourceChunk() {
     const previewComplete = vbaSourceOffset >= Math.min(vbaSourceSize, VBA_SOURCE_PREVIEW_LIMIT);
     const chunk = vbaSourceDecoder.decode(bytes, { stream: !previewComplete });
     if (vbaSourceHighlighting) {
-      vbaSourceHighlighter.appendSource(chunk);
+      const metrics = vbaSourceHighlighter.appendSource(chunk);
+      if (metrics) updateVbaSyntaxHighlightStatus(metrics);
+      vbaSourceMoreButton.disabled = false;
     } else {
       vbaSourceOutput.append(document.createTextNode(chunk));
     }
@@ -1025,7 +988,7 @@ async function appendVbaSourceChunk() {
     logDebug("vba_source_preview_error", getErrorDetails(error));
     setStatus(`Could not load VBA source preview: ${getErrorMessage(error)}`, true);
   } finally {
-    vbaSourceMoreButton.disabled = vbaSourceHighlightingInProgress;
+    vbaSourceMoreButton.disabled = false;
     logDuration("VBA source preview chunk", startedAt);
     vbaSourceLoading = false;
   }
@@ -1116,6 +1079,7 @@ function openSourcePreview(sourceType: "vba" | "xlm" | "pcode") {
   sourceCodeDialog.showModal();
   if (!source.size) return;
   if (sourceType === "vba") {
+    startVbaSyntaxHighlighting();
     if (vbaSourceSize <= VBA_SOURCE_PREVIEW_LIMIT) void loadVbaSourcePreview();
     else void appendVbaSourceChunk();
     return;
@@ -1869,7 +1833,6 @@ removeFileButton.addEventListener("click", clearSelectedFile);
 openVbaSourceButton.addEventListener("click", () => openSourcePreview("vba"));
 openXlmSourceButton.addEventListener("click", () => openSourcePreview("xlm"));
 openPcodeSourceButton.addEventListener("click", () => openSourcePreview("pcode"));
-vbaSourceHighlightButton.addEventListener("click", enableVbaSyntaxHighlighting);
 pcodeHighlightButton.addEventListener("click", enablePcodeSyntaxHighlighting);
 sourceDialogCloseButton.addEventListener("click", () => sourceCodeDialog.close());
 sourceCodeDialog.addEventListener("click", (event) => {

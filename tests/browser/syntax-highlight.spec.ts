@@ -55,13 +55,6 @@ test("large VBA highlighting renders only the viewport and stays responsive", as
     resolve("samples/13 Packs Solitaire Excel Edition.xlsm"),
   );
   await expect(page.locator("#open-vba-source")).toBeVisible({ timeout: 180_000 });
-  await page.locator("#open-vba-source").click();
-  const sourceChars = await expect.poll(
-    () => page.locator("#vba-source-output").evaluate((element) => element.textContent?.length ?? 0),
-    { timeout: 30_000 },
-  ).toBeGreaterThan(50_000).then(() =>
-    page.locator("#vba-source-output").evaluate((element) => element.textContent?.length ?? 0),
-  );
 
   await page.evaluate(() => {
     const probe = window.__highlightPerformanceProbe;
@@ -71,11 +64,17 @@ test("large VBA highlighting renders only the viewport and stays responsive", as
     probe.maxLongTaskMs = 0;
     probe.longTaskCount = 0;
   });
-  await page.locator("#vba-source-highlight").click();
-  const status = page.locator("#vba-source-highlight-status");
-  await expect(status).toContainText("Highlighting lines", { timeout: 60_000 });
-
+  await page.locator("#open-vba-source").click();
   const output = page.locator("#vba-source-output");
+  await expect.poll(
+    () => output.evaluate((element) => Number(element.getAttribute("data-source-chars"))),
+    { timeout: 30_000 },
+  ).toBeGreaterThan(50_000);
+  await expect(page.locator("#vba-source-more")).toBeHidden({ timeout: 30_000 });
+  const status = page.locator("#vba-source-highlight-status");
+  await expect(status).toContainText("Viewport highlighting active");
+  await expect(page.locator("#vba-source-highlight")).toHaveCount(0);
+
   const initialViewport = await output.evaluate((element) => ({
     sourceChars: Number(element.getAttribute("data-source-chars")),
     totalLines: Number(element.getAttribute("data-source-lines")),
@@ -84,10 +83,10 @@ test("large VBA highlighting renders only the viewport and stays responsive", as
     highlightedSpans: element.querySelectorAll(".syntax-token").length,
     domTextChars: element.textContent?.length ?? 0,
   }));
-  expect(initialViewport.sourceChars).toBe(sourceChars);
+  expect(initialViewport.sourceChars).toBeGreaterThan(50_000);
   expect(initialViewport.renderedLines).toBeLessThan(initialViewport.totalLines);
   expect(initialViewport.highlightedSpans).toBeGreaterThan(0);
-  expect(initialViewport.domTextChars).toBeLessThan(sourceChars / 2);
+  expect(initialViewport.domTextChars).toBeLessThan(initialViewport.sourceChars / 2);
 
   await page.locator("#vba-source-output").evaluate((element) => {
     const scrollContainer = element.closest("pre");
@@ -111,7 +110,7 @@ test("large VBA highlighting renders only the viewport and stays responsive", as
   });
   console.log("Large VBA syntax highlighting performance:", measurements);
 
-  expect(measurements.summary).toContain("Highlighting lines");
+  expect(measurements.summary).toContain("Viewport highlighting active");
   expect(measurements.maxFrameGapMs).toBeLessThan(2_000);
   expect(measurements.maxLongTaskMs).toBeLessThan(2_000);
 });
