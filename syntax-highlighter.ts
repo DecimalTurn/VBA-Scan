@@ -178,3 +178,152 @@ export class StreamingSyntaxHighlighter {
     };
   }
 }
+
+export interface ViewportHighlightMetrics {
+  sourceChars: number;
+  totalLines: number;
+  firstVisibleLine: number;
+  lastVisibleLine: number;
+  renderedLines: number;
+  tokenCount: number;
+  highlightedTokenCount: number;
+  tokenizeMs: number;
+  renderMs: number;
+}
+
+export class ViewportSyntaxHighlighter {
+  private source = "";
+  private lines: string[] = [];
+  private enabled = false;
+  private renderQueued = false;
+
+  private readonly onScroll = () => {
+    if (!this.enabled || this.renderQueued) return;
+    this.renderQueued = true;
+    requestAnimationFrame(() => {
+      this.renderQueued = false;
+      if (this.enabled) this.renderVisible();
+    });
+  };
+
+  constructor(
+    private readonly container: HTMLElement,
+    private readonly scrollContainer: HTMLElement,
+    private readonly language: SourceLanguage,
+    private readonly overscanLines = 12,
+  ) {
+    this.scrollContainer.addEventListener("scroll", this.onScroll, { passive: true });
+  }
+
+  reset(): void {
+    this.enabled = false;
+    this.source = "";
+    this.lines = [];
+    this.renderQueued = false;
+    this.container.classList.remove("syntax-virtual-output");
+    this.container.style.removeProperty("--syntax-virtual-line-height");
+    for (const attribute of [
+      "data-source-chars",
+      "data-source-lines",
+      "data-visible-line-start",
+      "data-visible-line-end",
+      "data-rendered-lines",
+    ]) {
+      this.container.removeAttribute(attribute);
+    }
+  }
+
+  enable(source: string): ViewportHighlightMetrics {
+    this.source = source;
+    this.lines = this.splitLines(source);
+    this.enabled = true;
+    this.container.classList.add("syntax-virtual-output");
+    return this.renderVisible();
+  }
+
+  appendSource(chunk: string): ViewportHighlightMetrics | null {
+    if (!chunk) return null;
+    this.source += chunk;
+    const newLines = this.splitLines(chunk);
+    if (this.lines.length === 0) this.lines = [""];
+    this.lines[this.lines.length - 1] += newLines[0] ?? "";
+    this.lines.push(...newLines.slice(1));
+    return this.enabled ? this.renderVisible() : null;
+  }
+
+  private splitLines(source: string): string[] {
+    return source.split("\n").map((line) => line.endsWith("\r") ? line.slice(0, -1) : line);
+  }
+
+  private renderVisible(): ViewportHighlightMetrics {
+    const totalLines = this.lines.length;
+    const lineHeight = Number.parseFloat(getComputedStyle(this.scrollContainer).lineHeight) || 16;
+    const viewportHeight = Math.max(lineHeight, this.scrollContainer.clientHeight);
+    const scrollTop = this.scrollContainer.scrollTop;
+    const firstVisibleIndex = Math.min(Math.floor(scrollTop / lineHeight), Math.max(0, totalLines - 1));
+    const start = Math.max(0, firstVisibleIndex - this.overscanLines);
+    const end = Math.min(
+      totalLines,
+      Math.max(start + 1, Math.ceil((scrollTop + viewportHeight) / lineHeight) + this.overscanLines),
+    );
+    const tokenizeStartedAt = performance.now();
+    const visibleTokens = this.lines.slice(start, end).map((line) => tokenizeCode(line, this.language));
+    const tokenizeMs = performance.now() - tokenizeStartedAt;
+    const renderStartedAt = performance.now();
+    const fragment = document.createDocumentFragment();
+    const topSpacer = this.createSpacer(start * lineHeight);
+    if (topSpacer) fragment.append(topSpacer);
+    let tokenCount = 0;
+    let highlightedTokenCount = 0;
+
+    visibleTokens.forEach((tokens, lineOffset) => {
+      tokenCount += tokens.length;
+      const line = document.createElement("span");
+      line.className = "syntax-virtual-line";
+      line.dataset.line = String(start + lineOffset + 1);
+      for (const token of tokens) {
+        if (!token.kind) {
+          line.append(document.createTextNode(token.text));
+          continue;
+        }
+        highlightedTokenCount++;
+        const span = document.createElement("span");
+        span.className = `syntax-token syntax-${token.kind}`;
+        span.textContent = token.text;
+        line.append(span);
+      }
+      fragment.append(line);
+    });
+
+    const bottomSpacer = this.createSpacer((totalLines - end) * lineHeight);
+    if (bottomSpacer) fragment.append(bottomSpacer);
+    this.container.replaceChildren(fragment);
+    this.container.style.setProperty("--syntax-virtual-line-height", `${lineHeight}px`);
+    this.container.dataset.sourceChars = String(this.source.length);
+    this.container.dataset.sourceLines = String(totalLines);
+    this.container.dataset.visibleLineStart = String(start + 1);
+    this.container.dataset.visibleLineEnd = String(end);
+    this.container.dataset.renderedLines = String(end - start);
+
+    return {
+      sourceChars: this.source.length,
+      totalLines,
+      firstVisibleLine: start + 1,
+      lastVisibleLine: end,
+      renderedLines: end - start,
+      tokenCount,
+      highlightedTokenCount,
+      tokenizeMs,
+      renderMs: performance.now() - renderStartedAt,
+    };
+  }
+
+  private createSpacer(height: number): HTMLElement | null {
+    if (height <= 0) return null;
+    const spacer = document.createElement("span");
+    spacer.className = "syntax-virtual-spacer";
+    spacer.style.height = `${height}px`;
+    spacer.setAttribute("aria-hidden", "true");
+    return spacer;
+  }
+}

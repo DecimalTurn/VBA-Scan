@@ -339,6 +339,9 @@ h2 { margin: 8px 0 0; font-family: var(--display); font-size: 18px; font-weight:
 .source-dialog-panel[hidden] { display: none; }
 .vba-source-preview[hidden] { display: none; }
 .source-dialog-panel pre { max-height: min(62vh, 42rem); margin: 0; padding: 13px 16px; overflow: auto; color: var(--ink); font: 10px/1.6 var(--mono); tab-size: 4; white-space: pre; }
+.syntax-virtual-output { display: block; }
+.syntax-virtual-line { display: block; box-sizing: border-box; width: max-content; min-width: 100%; height: var(--syntax-virtual-line-height); line-height: var(--syntax-virtual-line-height); white-space: pre; }
+.syntax-virtual-spacer { display: block; width: 1px; min-height: 0; }
 .syntax-comment { color: var(--syntax-comment); font-style: italic; }
 .syntax-string { color: var(--syntax-string); }
 .syntax-number, .syntax-hexadecimal { color: var(--syntax-number); }

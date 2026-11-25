@@ -1,4 +1,4 @@
-import { renderHighlightedCode, StreamingSyntaxHighlighter } from "./syntax-highlighter.ts";
+import { renderHighlightedCode, StreamingSyntaxHighlighter, ViewportSyntaxHighlighter } from "./syntax-highlighter.ts";
 
 const PYODIDE_VERSION = "0.27.7";
 const OLETOOLS_VERSION = "0.60.3";
@@ -179,7 +179,11 @@ const documentFilename = requireElement("#document-filename");
 const documentCodepage = requireElement("#document-codepage");
 const copyHashButton = requireElement<HTMLButtonElement>("#copy-hash-button");
 const copyStatus = requireElement("#copy-status");
-const vbaSourceHighlighter = new StreamingSyntaxHighlighter(vbaSourceOutput, "vba");
+const vbaSourceHighlighter = new ViewportSyntaxHighlighter(
+  vbaSourceOutput,
+  vbaSourceOutput.closest("pre")!,
+  "vba",
+);
 const pcodeHighlighter = new StreamingSyntaxHighlighter(pcodeOutput, "pcode");
 
 let selectedFile: File | null = null;
@@ -910,21 +914,28 @@ async function enableVbaSyntaxHighlighting() {
     }
     if (generation !== vbaSyntaxHighlightGeneration) return;
     source = vbaSourceOutput.textContent ?? "";
-    const metrics = await applySyntaxHighlightingInFrames(
-      source,
-      vbaSourceOutput,
-      vbaSourceHighlighter,
-      () => generation === vbaSyntaxHighlightGeneration,
+    await waitForAnimationFrame();
+    if (generation !== vbaSyntaxHighlightGeneration) return;
+    const metrics = vbaSourceHighlighter.enable(source);
+    vbaSourceHighlighting = true;
+    vbaSourceHighlightButton.textContent = "Syntax highlighting enabled";
+    showSyntaxHighlightStatus(
+      vbaSourceHighlightStatus,
+      `Highlighting lines ${metrics.firstVisibleLine.toLocaleString()}–${metrics.lastVisibleLine.toLocaleString()} of ${metrics.totalLines.toLocaleString()} as you scroll · ${metrics.tokenizeMs.toFixed(1)} ms tokenize · ${metrics.renderMs.toFixed(1)} ms render`,
     );
-    if (metrics) {
-      vbaSourceHighlighting = true;
-      vbaSourceHighlightButton.textContent = "Syntax highlighting enabled";
-      showSyntaxHighlightStatus(
-        vbaSourceHighlightStatus,
-        `${source.length.toLocaleString()} chars · ${metrics.elapsedMs.toFixed(0)} ms total · regex ${metrics.tokenizeMs.toFixed(1)} ms · DOM ${metrics.renderMs.toFixed(1)} ms · frame wait ${metrics.frameWaitMs.toFixed(1)} ms · post-render ${metrics.postRenderMs.toFixed(1)} ms · max frame gap ${metrics.maxFrameGapMs.toFixed(1)} ms`,
-      );
-      logSyntaxHighlightMetrics("vba", metrics);
-    }
+    const details = {
+      source_chars: metrics.sourceChars,
+      total_lines: metrics.totalLines,
+      first_visible_line: metrics.firstVisibleLine,
+      last_visible_line: metrics.lastVisibleLine,
+      rendered_lines: metrics.renderedLines,
+      token_count: metrics.tokenCount,
+      highlighted_token_count: metrics.highlightedTokenCount,
+      tokenize_ms: Number(metrics.tokenizeMs.toFixed(1)),
+      render_ms: Number(metrics.renderMs.toFixed(1)),
+    };
+    console.info("[VBA Scan] vba syntax highlight viewport", details);
+    logDebug("syntax_highlight_viewport", details);
   } catch (error) {
     logDebug("vba_syntax_highlight_error", getErrorDetails(error));
     if (generation === vbaSyntaxHighlightGeneration) {
@@ -1002,7 +1013,7 @@ async function appendVbaSourceChunk() {
     const previewComplete = vbaSourceOffset >= Math.min(vbaSourceSize, VBA_SOURCE_PREVIEW_LIMIT);
     const chunk = vbaSourceDecoder.decode(bytes, { stream: !previewComplete });
     if (vbaSourceHighlighting) {
-      vbaSourceHighlighter.append(chunk, previewComplete);
+      vbaSourceHighlighter.appendSource(chunk);
     } else {
       vbaSourceOutput.append(document.createTextNode(chunk));
     }
