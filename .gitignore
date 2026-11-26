@@ -2,6 +2,7 @@ VBA-Malware-Scanner-main/
 samples/
 .venv/
 node_modules/
+/dist/
 site/
 playwright-report/
 test-results/

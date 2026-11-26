@@ -10,7 +10,7 @@ Simply visit https://vba-scan.decimalturn.dev and submit a file for local analys
 
 ## How it works
 
-On the first scan, the page downloads Pyodide and the dependencies required by `oletools`. The `oletools` and `pcodedmp` sources are bundled from their submodules as `dist/oletools.zip`, so the page runs the checked-out versions, including local customizations. Scanned documents are not uploaded. An internet connection is required to initialize the analysis engine and install its dependencies.
+On the first scan, the page downloads Pyodide and the dependencies required by `oletools`. The build bundles the `oletools` and `pcodedmp` sources from their submodules as `dist/oletools.zip`, then copies that archive into the Pages output. Scanned documents are not uploaded. An internet connection is required to initialize the analysis engine and install its dependencies.
 
 After changing either package submodule, rebuild the static package asset:
 
@@ -18,7 +18,7 @@ After changing either package submodule, rebuild the static package asset:
 python3 build-oletools-asset.py
 ```
 
-Commit the regenerated `dist/oletools.zip` with the submodule update.
+The generated `dist/` directory is local build output and is not committed. The GitHub Pages workflow builds the archive from its checked-out submodules on each deployment, so the website uses the package corresponding to that build.
 
 P-code downloads are named `<filename>-<file-ext>-pcode.txt` (for example,
 `invoice-xlsm-pcode.txt`). The standalone extractor writes the same name into
@@ -32,8 +32,9 @@ module files.
 
 ## Publish on GitHub Pages
 
-The GitHub Actions workflow publishes the site on pushes to `main` and can also
-be run manually from the Actions tab. To enable deployment, set the repository's
+The GitHub Actions workflow builds the site and its `oletools.zip` package, then
+publishes both on pushes to `main`; it can also be run manually from the Actions
+tab. To enable deployment, set the repository's
 Pages build and deployment source to **GitHub Actions** in Settings → Pages.
 
 ## Run locally

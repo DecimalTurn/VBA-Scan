@@ -39,7 +39,7 @@ jobs:
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Build site
+      - name: Build site and analysis package
         run: npm run build
 
       - name: Upload site
