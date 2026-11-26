@@ -150,7 +150,7 @@ async function handleMessage(data: WorkerRequest): Promise<void> {
     try {
       await loadAnalysisEngine();
     } catch (error) {
-      console.error("[VBA Scan] Analysis engine setup failed.", getErrorMessage(error));
+      console.error("[VBA-Scan] Analysis engine setup failed.", getErrorMessage(error));
     }
     return;
   }

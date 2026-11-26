@@ -11,7 +11,7 @@
       root.dataset.theme = savedTheme;
     }
   } catch (error) {
-    console.warn("[VBA Scan] Could not read the saved theme preference.", error);
+    console.warn("[VBA-Scan] Could not read the saved theme preference.", error);
   }
 
   function getCurrentTheme() {
@@ -40,7 +40,7 @@
       try {
         window.localStorage.setItem(storageKey, nextTheme);
       } catch (error) {
-        console.warn("[VBA Scan] Could not save the theme preference.", error);
+        console.warn("[VBA-Scan] Could not save the theme preference.", error);
       }
       updateThemeControls();
     });

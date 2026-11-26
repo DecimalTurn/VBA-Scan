@@ -2,7 +2,7 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "Build and serve VBA Scan",
+			"label": "Build and serve VBA-Scan",
 			"type": "shell",
 			"command": "npm",
 			"args": [

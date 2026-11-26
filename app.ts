@@ -344,7 +344,7 @@ analysisWorker.addEventListener("error", (event) => {
 
 function logDuration(label: string, startedAt: number) {
   const duration = Number((performance.now() - startedAt).toFixed(1));
-  console.info(`[VBA Scan] ${label}: ${duration} ms`);
+  console.info(`[VBA-Scan] ${label}: ${duration} ms`);
   logDebug("timing", { label, duration_ms: duration });
 }
 
@@ -1011,7 +1011,7 @@ function openSourcePreview(sourceType: "vba" | "xlm" | "pcode") {
 
 function downloadDebugLog() {
   const log = {
-    app: "VBA Scan",
+    app: "VBA-Scan",
     pyodide_version: PYODIDE_VERSION,
     oletools_version: OLETOOLS_VERSION,
     user_agent: navigator.userAgent,
