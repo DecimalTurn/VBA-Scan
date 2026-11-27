@@ -717,7 +717,7 @@ function createVbaSourceDetails(location: VbaSourceLocation) {
   const details = document.createElement("details");
   details.className = "vba-source-lines";
   const summary = document.createElement("summary");
-  summary.textContent = "Show matching VBA source line";
+  summary.textContent = `Matched ${location.module_name}, line ${location.line_number}`;
   const content = document.createElement("div");
   content.className = "vba-source-context";
   details.append(summary, content);
