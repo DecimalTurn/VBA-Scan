@@ -1513,16 +1513,21 @@ function renderResults(result: ScanResult, elapsedMilliseconds: number, sha256: 
       content.className = "finding-content";
       const keyword = document.createElement("div");
       keyword.className = "finding-keyword";
-      keyword.textContent = finding.keyword;
+      const isBase64Finding = finding.type === "Base64 String";
+      keyword.textContent = isBase64Finding
+        ? `"${finding.description}" → "${finding.keyword}"`
+        : finding.keyword;
       const description = document.createElement("div");
       description.className = "finding-description";
       const sourceLocations = sourceContextType === "vba"
         ? vbaSourceLocationsBySignature.get(findingSignature(finding)) || []
         : [];
       const locationCount = finding.keyword.trim().toLowerCase() === "lib" ? sourceLocations.length : 0;
-      description.textContent = `${finding.description.replace(" (option --decode to see all)", "")}${
-        locationCount > 1 ? ` (${locationCount} source locations)` : ""
-      }`;
+      description.textContent = isBase64Finding
+        ? "Potential Base64 string that decodes to printable characters"
+        : `${finding.description.replace(" (option --decode to see all)", "")}${
+          locationCount > 1 ? ` (${locationCount} source locations)` : ""
+        }`;
       content.append(keyword, description);
       if (unmatchedFindingSignatures?.has(findingSignature(finding))) {
         const unmatched = document.createElement("div");
