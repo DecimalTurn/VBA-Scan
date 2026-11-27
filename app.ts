@@ -1450,9 +1450,15 @@ function renderResults(result: ScanResult, elapsedMilliseconds: number, sha256: 
   vbaSourceWarningIcon.hidden = vbaSourceFindings.length === 0;
   xlmWarningIcon.hidden = xlmFindings.length === 0;
   const findingSignature = ({ type, keyword }: Finding) => `${type}\u0000${keyword.trim().toLowerCase()}`;
-  const sourceLocationSignature = (finding: Finding) => finding.type === "Hex String"
-    ? `${findingSignature(finding)}\u0000${finding.description.trim().toLowerCase()}`
-    : findingSignature(finding);
+  const sourceLocationSignature = (finding: Finding) => {
+    if (finding.type === "Hex String") {
+      return `${findingSignature(finding)}\u0000${finding.description.trim().toLowerCase()}`;
+    }
+    if (finding.type === "Base64 String") {
+      return `${finding.type}\u0000${finding.keyword.trim()}\u0000${finding.description.trim()}`;
+    }
+    return findingSignature(finding);
+  };
   const vbaSourceLocationsBySignature = new Map<string, VbaSourceLocation[]>();
   result.vba_source_locations.forEach((location) => {
     const signature = sourceLocationSignature(location);
@@ -1491,13 +1497,20 @@ function renderResults(result: ScanResult, elapsedMilliseconds: number, sha256: 
     const hexSummaryFinding = findings.find((finding) =>
       finding.type === "Suspicious" && finding.keyword.trim().toLowerCase() === "hex strings",
     );
+    const base64StringFindings = findings.filter((finding) => finding.type === "Base64 String");
+    const base64SummaryFinding = findings.find((finding) =>
+      finding.type === "Suspicious" && finding.keyword.trim().toLowerCase() === "base64 strings",
+    );
     const regularFindings = findings.filter((finding) =>
       finding.type !== "Hex String"
-      && !(finding.type === "Suspicious" && finding.keyword.trim().toLowerCase() === "hex strings"),
+      && finding.type !== "Base64 String"
+      && !(finding.type === "Suspicious" && finding.keyword.trim().toLowerCase() === "hex strings")
+      && !(finding.type === "Suspicious" && finding.keyword.trim().toLowerCase() === "base64 strings"),
     );
     const hasHexGroup = hexStringFindings.length > 0 || hexSummaryFinding !== undefined;
-    countElement.textContent = `${regularFindings.length + Number(hasHexGroup)}`;
-    if (regularFindings.length === 0 && !hasHexGroup) {
+    const hasBase64Group = base64StringFindings.length > 0 || base64SummaryFinding !== undefined;
+    countElement.textContent = `${regularFindings.length + Number(hasHexGroup) + Number(hasBase64Group)}`;
+    if (regularFindings.length === 0 && !hasHexGroup && !hasBase64Group) {
       const empty = document.createElement("div");
       empty.className = "no-findings";
       empty.textContent = emptyMessage;
@@ -1513,21 +1526,16 @@ function renderResults(result: ScanResult, elapsedMilliseconds: number, sha256: 
       content.className = "finding-content";
       const keyword = document.createElement("div");
       keyword.className = "finding-keyword";
-      const isBase64Finding = finding.type === "Base64 String";
-      keyword.textContent = isBase64Finding
-        ? `"${finding.description}" → "${finding.keyword}"`
-        : finding.keyword;
+      keyword.textContent = finding.keyword;
       const description = document.createElement("div");
       description.className = "finding-description";
       const sourceLocations = sourceContextType === "vba"
         ? vbaSourceLocationsBySignature.get(findingSignature(finding)) || []
         : [];
       const locationCount = finding.keyword.trim().toLowerCase() === "lib" ? sourceLocations.length : 0;
-      description.textContent = isBase64Finding
-        ? "Potential Base64 string that decodes to printable characters"
-        : `${finding.description.replace(" (option --decode to see all)", "")}${
-          locationCount > 1 ? ` (${locationCount} source locations)` : ""
-        }`;
+      description.textContent = `${finding.description.replace(" (option --decode to see all)", "")}${
+        locationCount > 1 ? ` (${locationCount} source locations)` : ""
+      }`;
       content.append(keyword, description);
       if (unmatchedFindingSignatures?.has(findingSignature(finding))) {
         const unmatched = document.createElement("div");
@@ -1600,32 +1608,36 @@ function renderResults(result: ScanResult, elapsedMilliseconds: number, sha256: 
       row.append(type, content);
       return row;
       });
-      if (hasHexGroup) {
+      const createEncodedStringGroup = (
+        title: string,
+        stringFindings: Finding[],
+        detectedText: string,
+        descriptionText: string,
+      ) => {
         const row = document.createElement("div");
         row.className = "finding-row hex-finding-row";
         const type = document.createElement("div");
         type.className = "finding-type";
-        type.textContent = "Hex strings";
+        type.textContent = title;
         const content = document.createElement("div");
         content.className = "finding-content";
         const keyword = document.createElement("div");
         keyword.className = "finding-keyword";
-        keyword.textContent = hexStringFindings.length
-          ? `${hexStringFindings.length} encoded ${hexStringFindings.length === 1 ? "string" : "strings"} detected`
-          : "Hex-encoded strings detected";
+        keyword.textContent = stringFindings.length
+          ? `${stringFindings.length} encoded ${stringFindings.length === 1 ? "string" : "strings"} detected`
+          : detectedText;
         const description = document.createElement("div");
         description.className = "finding-description";
-        description.textContent = hexSummaryFinding?.description.replace(" (option --decode to see all)", "")
-          || "Review the encoded values and their decoded text.";
+        description.textContent = descriptionText;
         content.append(keyword, description);
-        if (hexStringFindings.length > 0) {
+        if (stringFindings.length > 0) {
           const details = document.createElement("details");
           details.className = "hex-string-details";
           const summary = document.createElement("summary");
           summary.textContent = "Show encoded and decoded strings";
           const list = document.createElement("div");
           list.className = "hex-string-list";
-          hexStringFindings.forEach((finding) => {
+          stringFindings.forEach((finding) => {
             const item = document.createElement("div");
             item.className = "hex-string-item";
             for (const [label, value] of [["Encoded", finding.description], ["Decoded", finding.keyword]]) {
@@ -1664,7 +1676,27 @@ function renderResults(result: ScanResult, elapsedMilliseconds: number, sha256: 
           content.append(note);
         }
         row.append(type, content);
-        rows.push(row);
+        return row;
+      };
+      if (hasHexGroup) {
+        rows.push(createEncodedStringGroup(
+          "Hex strings",
+          hexStringFindings,
+          "Hex-encoded strings detected",
+          hexSummaryFinding?.description.replace(" (option --decode to see all)", "")
+            || "Review the encoded values and their decoded text.",
+        ));
+      }
+      if (hasBase64Group) {
+        rows.push(createEncodedStringGroup(
+          "Base64 strings",
+          base64StringFindings,
+          "Base64-encoded strings detected",
+          base64StringFindings.length
+            ? "Potential Base64 strings that decode to printable characters."
+            : base64SummaryFinding?.description.replace(" (option --decode to see all)", "")
+              || "Review the encoded values and their decoded text.",
+        ));
       }
       listElement.replaceChildren(...rows);
     }
